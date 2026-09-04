@@ -1,7 +1,7 @@
 {
   "schema": "maroo-workshop/local-payroll-evidence@5",
   "label": "[Local]",
-  "utc": "2026-09-04T04:23:36.813Z",
+  "utc": "2026-09-04T05:08:50.138Z",
   "clairveilCommit": "ca85b02708fdd75259d4d2ee2d671c21198cec69",
   "workflow": "clairveil-distinct-employee-one-proof-batch",
   "asset": "uclair",
@@ -26,17 +26,17 @@
   "transactionEnvelopeCount": 1,
   "transactions": {
     "deposit": {
-      "txHash": "0CFF463CF45EC232B7C0981E601EE3E06179EAFD630BF0C0F1B979C8FE2208F0",
+      "txHash": "D1BD6EEB8367F2F984101B760557C2505B6B1BF568089E25D1BA72D5ABA14A08",
       "height": "2",
       "code": 0,
       "amount": "300uclair"
     },
     "payrollBatch": {
-      "txHash": "9B06A24FA020E649040EBE57EFADE2F5FF4A76A155903B4DDAA90C54695E06C8",
+      "txHash": "CC5E1A5AB9BFA1928B1238FF29BB2709E2F5D7650E8A5AD8E1E1F4DEB777A90C",
       "height": "5",
       "code": 0,
-      "payloadHash": "740f7637197ba0b66c5db83b69fee10cc22ae5b41bb87e44082eaab0ab489afc",
-      "proofArtifactDigest": "sha256:b74ceda8b8d45657a9c7617c40984061a72ad024ac6b4face9ca8aefed88aec3",
+      "payloadHash": "55cbb5b3c698b37dbd11255456107230f59d2a6a255af51693a2423943af21a5",
+      "proofArtifactDigest": "sha256:a4b825f6c32c5c1ec1095df0a74bbf2a0ee6ccfdbc49c4373132d0b452bf3403",
       "inputCount": 1,
       "outputCount": 3
     }
@@ -45,7 +45,7 @@
     {
       "employeeId": "EMP-A",
       "profile": "employee-a",
-      "recipientAddressDigest": "sha256:536dc8b9f5977257df3a4eb839310922c396bfcad91e39de498bbed2301459df",
+      "recipientAddressDigest": "sha256:161757ad253d922369b462d1097fe9da2216ca44cd2d87d6a22c6d6ab79b365e",
       "beforeNoteCount": 0,
       "afterNoteCount": 1,
       "newNoteCount": 1,
@@ -55,7 +55,7 @@
     {
       "employeeId": "EMP-B",
       "profile": "employee-b",
-      "recipientAddressDigest": "sha256:efd47a562e20cd68958be9bb62b2804cc6b50ec0ed6b8a2e017e3ef354b2b251",
+      "recipientAddressDigest": "sha256:d174489f51f6643cf59008247d4a27e68c919709b444b0a8345262f65fa9005d",
       "beforeNoteCount": 0,
       "afterNoteCount": 1,
       "newNoteCount": 1,
@@ -65,7 +65,7 @@
     {
       "employeeId": "EMP-C",
       "profile": "employee-c",
-      "recipientAddressDigest": "sha256:5a4c20309a9c4e40f685fa2344c47c3a01b8f1144ca93f54c468bd3948c04286",
+      "recipientAddressDigest": "sha256:765013ee43d78b887c526ee22a4f76ac906dd467d1233b2ea24a1cc5daa9196f",
       "beforeNoteCount": 0,
       "afterNoteCount": 1,
       "newNoteCount": 1,
@@ -75,7 +75,7 @@
   ],
   "observationComparison": {
     "publicObserver": {
-      "txHash": "9B06A24FA020E649040EBE57EFADE2F5FF4A76A155903B4DDAA90C54695E06C8",
+      "txHash": "CC5E1A5AB9BFA1928B1238FF29BB2709E2F5D7650E8A5AD8E1E1F4DEB777A90C",
       "height": "5",
       "eventType": "batch_transfer",
       "inputCount": 1,
@@ -136,8 +136,8 @@
       "intendedEmployeeId": "EMP-B",
       "actualRecipientEmployeeId": "EMP-C",
       "amount": "120uclair",
-      "setupDepositTxHash": "3C8D184746CF4B7E8365DCFE8C5EBA28C9A600573F1E0032521D167312C829A2",
-      "transferTxHash": "F5DDB7C755C4CBA2EBECDA66404FC059DF9DF70C1881B871F164DF8BDCD7E829",
+      "setupDepositTxHash": "96603BB6D92F8437E82C1378F773893CE9509640537149884EFBAD690656FFB5",
+      "transferTxHash": "18EE2411A152FA21E1D9DA69BD3AFAFA88392592D072EDE94D3807BF0289EA5B",
       "transferCode": 0,
       "intendedEmployeeNewNoteCount": 0,
       "actualRecipientNewNoteCount": 1,

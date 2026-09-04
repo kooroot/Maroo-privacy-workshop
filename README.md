@@ -31,6 +31,7 @@ Maroo Developer Relations 과제의 Primary Track B 제출물이다. 한국 금�
 | 공개 소스 리포지토리 | 이 GitHub repository | 외부 코드 출처·license와 `.env.example` 포함; 실제 credential 제외 |
 | `README.md` | 이 문서 | Primary Track, 대상, 리뷰 경로, 실행법, 영상·tx 링크, Clairveil SHA, 한계 명시 |
 | `SUBMISSION_NOTES.md` | [SUBMISSION_NOTES.md](SUBMISSION_NOTES.md) | Assumptions/Discrepancies, Validation, AI Usage, DX Feedback, Known Limitations 포함 |
+| Workshop slide deck | [Maroo_Privacy_Workshop_75min.pptx](deliverables/Maroo_Privacy_Workshop_75min.pptx) | Track B 참가자용 30장; 아키텍처·트랜잭션 흐름·신뢰 경계·실패 모드·프로덕션 판단 포함 |
 | Video | [video-link.md](video-link.md) | 5~8분 run sheet 완료; 실제 public/unlisted URL 입력 대기 |
 
 ### 2.2 Track B 필수 결과물
@@ -40,6 +41,7 @@ Maroo Developer Relations 과제의 Primary Track B 제출물이다. 한국 금�
 | Runnable Demo | [demo](demo/README.md) | request/receipt/report validator와 submit/rehearsal/local 정상·실패 control 구현·검증 |
 | Live Testnet Evidence | [Path B evidence](evidence/live-testnet/state-change-attempt.json) | 실제 `IPrivacy.deposit`·`transfer`가 각각 포함 후 revert; 유효 ZK proof 성공으로 주장하지 않음 |
 | 60~75분 Workshop Package | [curriculum](workshop/curriculum.md), [participant](workshop/participant-guide.md), [facilitator](workshop/facilitator-guide.md), [exit ticket](workshop/exit-ticket.md) | Maroo 우선 75분; 공통 환경 setup·actual Clairveil 참고 실습·목표·구간별 criteria·토론·다음 단계 포함 |
+| Workshop Slides | [30-slide PPTX](deliverables/Maroo_Privacy_Workshop_75min.pptx) | 참가자 발표용 16:9 덱; 모든 다이어그램과 표를 PowerPoint에서 편집 가능 |
 | Troubleshooting Guide | [troubleshooting](workshop/troubleshooting.md) | 15개 오류 + Clairveil/Maroo/recorded 대체 진행 |
 | Validation | [demo Validation](demo/README.md#10-validation), [SUBMISSION_NOTES](SUBMISSION_NOTES.md#2-validation), [Clairveil local evidence](evidence/local/payroll-summary.json) | actual Clairveil proof/scan·overspend·오지급 control + actual Maroo Path B receipt 검증 |
 | Walkthrough Video | [video-link.md](video-link.md) | 링크/길이는 녹화 후 기록 |
@@ -202,6 +204,8 @@ Maroo Docs는 calldata/ABI를 제공하지만 이 저장소에는 테스트넷 V
 ├── LICENSE
 ├── SUBMISSION_NOTES.md
 ├── video-link.md
+├── deliverables/
+│   └── Maroo_Privacy_Workshop_75min.pptx
 ├── demo/
 │   ├── adapter-contract.md
 │   ├── fixtures/payroll-plan.json
