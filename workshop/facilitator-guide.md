@@ -1,116 +1,237 @@
-# 진행자 가이드 — 75분 시간표 정본
+# 진행자 가이드 — Maroo Testnet 우선 75분 워크숍
 
-참가자 절차·명령·success criteria 의 정본은 [participant-guide.md](participant-guide.md) 다. 이 문서는 참가자 단계를 **번호로만** 참조하고 절차를 재기술하지 않는다. 장애 대응의 정본은 [troubleshooting.md#fallback](troubleshooting.md#fallback) 이며 여기서는 링크만 건다(리뷰 §1.3 S4).
+목표는 참가자 20명이 각각 자기 환경에서 Maroo Testnet readiness, Clairveil `x/privacy` 구현 참고 실습, Maroo Testnet 실행을 순서대로 완료하고 성공·거부·미검증을 직접 판정하게 하는 것이다. 진행자는 대신 서명하지 않고 private key나 shielded profile material을 받지 않는다.
 
-라벨은 `[Live Testnet]` `[Local]` `[Simulation]` `[Docs Only]` 네 가지만 쓴다(과제 L158). 진행 언어는 한국어, 명령·식별자는 영어 그대로(과제 L239-241).
+## 1. 운영 원칙
 
----
+1. Maroo Testnet이 정본 실행 경로다.
+2. Clairveil은 실제 `x/privacy` transaction·proof·note·scan을 참가자가 직접 검증하는 `[Local]` 구현 참고 실습이다.
+3. Clairveil의 `uclair`·Cosmos runtime·proof를 Maroo OKRW·PCL·EVM ABI/VK 성공으로 바꾸어 말하지 않는다.
+4. Foundry는 전원이 같은 EVM 운영 도구를 갖췄는지 확인한다. `cast`는 Maroo public state와 receipt를 교차 확인하는 데 쓰고, 범용 Anvil·Solidity 기초 실습은 하지 않는다.
+5. 모든 참가자는 1인 1 checkout, 1 company test wallet, 1 employee public account, 1 evidence directory를 쓴다.
+6. 호환 Maroo prover/scanner가 없으면 Path B rejection을 실행하고 full privacy payroll 성공을 주장하지 않는다.
 
-## 1. 진행 전 체크 (전날 ~ 시작 30분 전)
+## 2. 전날 준비
 
-| # | 항목 | 확인 방법 | 상태 |
+### 2.1 버전과 package smoke
+
+```bash
+bun --version
+go version
+anvil --version
+cast --version
+forge --version
+git -C ../clairveil rev-parse HEAD
+bun install --cwd demo --frozen-lockfile
+bun run demo/scripts/check-workshop-environment.ts
+bun run --cwd demo check
+```
+
+권장 기준은 macOS, Bun 1.4+, TypeScript 7, Go 1.25 계열, Foundry 도구 모음과 Clairveil commit `ca85b02708fdd75259d4d2ee2d671c21198cec69`이다. `WORKSHOP ENVIRONMENT READY`가 출력돼야 한다. Windows/WSL2는 직접 smoke한 경우에만 지원 환경으로 공지한다.
+
+### 2.2 참가자별 자산
+
+- 회사 테스트넷 계정 20개와 회사와 다른 employee 공개 계정 20개.
+- 회사별 300 tOKRW 상당 + 두 transaction gas + 1회 재시도 여유.
+- 참가자별 repository와 sibling `../clairveil` checkout.
+- 실제 직원 정보가 아닌 EMP-A/B/C 합성 식별자.
+- Path A를 쓸 경우 Maroo용 shielded profile 3개, auditor profile, adapter version/commit/VK id.
+
+company address만 run card에 기록한다. private key, mnemonic, witness, viewing/audit key는 수집하지 않는다.
+
+Go module cache와 Clairveil build를 전날 예열한다.
+
+```bash
+git -C ../clairveil rev-parse HEAD
+cd ../clairveil
+go mod download
+go build ./cmd/clairveild
+go build ./cmd/clairveil-setup
+cd ../maroo-privacy-workshop
+```
+
+### 2.3 Maroo live 준비 게이트
+
+| Gate | 확인 | 통과 증거 |
+|---|---|---|
+| M1 | RPC·chain | chain `450815` |
+| M2 | OKRW | 실제 `getParams` 응답과 company 잔액 |
+| M3 | PCL | global/Privacy contract policy raw response |
+| M4 | Privacy | target `0x100000000000000000000000000000000000000b` |
+| M5 | signer | `COMPANY_PRIVATE_KEY`가 `COMPANY_ACCOUNT`와 일치 |
+| M6 | execution path | Path A compatible bundle 또는 Path B rejection 범위가 시작 전에 확정 |
+
+Path A는 Maroo-compatible deposit proof, 성공 deposit와 treasury scan, 1-input/3-output batch proof, 성공 batch, EMP-A/B/C scans와 audit verification이 같은 clean run에서 모두 확인됐을 때만 선언한다. 하나라도 없으면 Path B로 운영한다. Clairveil local success로 Path A를 대신하지 않는다.
+
+### 2.4 Clairveil actual local smoke
+
+```bash
+bun run demo/scripts/run.ts --target clairveil-local --action payroll \
+  --clairveil ../clairveil \
+  --out evidence/local/facilitator-smoke.json
+```
+
+`CLAIRVEIL LOCAL PAYROLL AND FAILURE CONTROLS VERIFIED`, deposit/batch `code=0`, deposit `300uclair`, proof 1개와 공개 digest, input 1/output 3, 서로 다른 EMP-A/B/C의 `100/120/80uclair` scan을 확인한다. 이어 public event에 평문 급여 필드가 없고, `301uclair` overspend는 proof/broadcast 전 거부되며, EMP-B 대신 EMP-C로 보낸 `120uclair`는 chain 성공·업무 실패로 기록되는지 확인한다. 커리큘럼은 실행·판독·토론에 17분을 배정한다. 완료 시간이 10분을 넘으면 참가자별 Go cache와 CPU 여유를 사전 점검한다. evidence label은 `[Local]`이어야 한다.
+
+### 2.5 T-30분
+
+1. Maroo doctor/preflight를 다시 실행한다.
+2. faucet, explorer, public RPC에서 receipt 조회를 확인한다.
+3. company balance와 address/key self-check 결과만 확인한다.
+4. 참가자별 `../clairveil` SHA, Go cache, 디스크 여유를 확인한다.
+5. `anvil --version`, `cast --version`, `forge --version`이 모두 성공하는지 표본 확인한다.
+6. Path A 또는 Path B를 첫 화면에 명시한다.
+7. 저장된 Maroo 실패 tx 2개와 Clairveil local evidence를 대체 자료로 준비한다.
+8. Maroo scanner 미준비 시 직원 scan 성과가 미검증으로 남는다고 공지한다.
+
+## 3. 75분 진행표
+
+<!-- workshop-agenda:start -->
+| 시간 | 구간 | 진행자 행동 | 중단 기준 |
 |---|---|---|---|
-| P1 | [../README.md](../README.md) Quick Start 를 진행자 머신에서 통과 | participant-guide §0 의 확인 명령 3개가 기대 출력과 일치 (`0x6e0ff` / `rpc_modules` 6개 / `atokrw`) | TODO(실측: 당일 UTC 기록) |
-| P2 | faucet 잔액 | faucet `https://faucet.maroo.io`(docs testnet-access; 2026-09-02T07:54Z HTTP 200). 규칙 `[Live Testnet]` **D-7**: 요청당 5,000 tOKRW · 10분당 5회 · 잔액 10,000 이상이면 거부 · RainbowKit 지갑 연결 + reCAPTCHA v3 필수(스크립트 자동화 불가) (가이드 §5.5). 진행자는 **백업 지갑을 브라우저로 미리** 채운다(가이드 §5.5). 필요량 산식: Step 1 = 1 + 0.189 OKRW; Step 3 분기 A = deposit 금액 + ≈20 OKRW(2.24M gas × 9e12); 분기 B 를 온체인으로 보낼 경우 ≈15.75 OKRW(표본 1,750,000 gas × 9e12) | 백업 지갑 잔액 TODO(실측: `cast balance --ether`) |
-| P3 | KYC 여부 결정 = 게이트 ⑥ (가이드 §6) | `https://kyc-testnet.maroo.io` 는 실명·생년월일·휴대폰 + 카카오 본인인증을 요구하고 절차 문서가 없다(가이드 §5.1-⑨, §2.4-4). 진행자 지갑 1개만 KYC 할지, 참가자 전원 분기 B 로 갈지 결정. 외국인·비카카오 참가자는 분기 A 불가. 유효 proof 생성 수단이 미확정이면 분기 A 는 **성립하지 않는다**(participant-guide Step 3 "입력 생성") | 이번 회차 분기: TODO(실측: A/B) |
-| P4 | 보조 주소 준비 | 참가자 수만큼 `cast wallet new` 로 만든 **주소만** 목록화(개인키는 보관하지 않거나 즉시 폐기). 참가자가 직접 만들어도 됨 | TODO(실측: 당일 주소 목록) |
-| P5 | 시연용 터미널 2개 | T1 = 명령 실행(participant-guide §0 의 공통 환경 블록 — `cd demo` → `source .env` → `$RPC`…`$ME` — 준비 완료; bun 1.4.0 + foundry 1.7.1 `cast`/`forge` 설치는 [../README.md](../README.md) Quick Start), T2 = `cast receipt`/`curl` 확인 + explorer 브라우저. 브라우저는 **새 프로필**(과제 L169; 리뷰 §1.2 M6) | |
-| P6 | prover(분기 A 일 때만) | `clairveil-proverd` 는 Bearer 토큰이 비면 무인증(가이드 §3.4-4, §8). 기동·호환은 TODO(실측: 가이드 §4 Phase E). | TODO(실측: 분기 A 확정 시) |
-| P7 | `PROVER_BEARER_TOKEN` 은 당일 별도 채널로 배포하고 워크숍 종료 후 폐기한다. 리포·evidence·영상에 넣지 않는다(과제 L169). | | |
-| P8 | 성공 표본과 거부 표본 링크를 T2 에 미리 열어 둔다 | 성공 `https://explorer-testnet.maroo.io/tx/0xe492ae2ceebda2a9a48691e42aa9ac0a1df5d00d517fb31783216fc7d0770a70` `[Live Testnet] (2026-09-02)` · 거부(문자열 revert) `…/tx/0x3839c31d1b5625bd59b5251f6595b3e50ffb451aab93389fdbc488f30ee3899b` · 구 selector 실패 `…/tx/0xe38734cb1e4b299b65b9135418b46baa93f8f5f5a9f7594258f6775997d78a90` (전부 participant-guide Step 2·3 에 출처) | |
-| P9 | 로컬 대체 경로 준비 상태 | 이 머신은 `~/.clairveil` 없음(`make init` 미실행, 2026-09-02). 장애 대비로 미리 돌려 두려면 [troubleshooting.md#fallback](troubleshooting.md#fallback) 의 절차. 소요 시간 TODO(실측) | TODO(실측: make init 실행 여부) |
+| **00–07** | Maroo 목표·역할 | company signer와 employee scanner 역할, 공개/비공개 가설 확인 | 05분에 역할표 미작성 참가자 지원 |
+| **07–17** | 공통 환경 setup | Bun·Go·Git·Foundry·Clairveil readiness와 개인 plan 확인 | 14분에 실패자는 setup 지원 또는 observer 경로로 전환 |
+| **17–27** | Maroo readiness | doctor/preflight와 public state 교차 확인 | 24분에 chain/key/funding 실패자는 broadcast 중단 |
+| **27–44** | Clairveil 정상·관찰·실패 실습 | happy path, 공개/직원 관찰, overspend·오지급 marker 확인 | 41분에 실패자는 저장 local evidence로 판정 실습 |
+| **44–52** | Maroo 대응 관계·통제 설계 | PCL 경계, employee-address binding과 각 참가자의 Path A/B 확인 | 49분에 path 미확정이면 Path B로 고정 |
+| **52–63** | Maroo deposit→transfer | 회사 signer의 명시적 승인 뒤 두 호출 순서 통제 | 60분에 미포함이면 RPC/tx hash evidence 수집 |
+| **63–69** | receipt·직원 확인·실패 경계 | receipt/delivery 분리와 first-failure·evidence label 판정 | 68분에 미검증·과장 문장 수정 |
+| **69–75** | 종료·다음 단계 | exit ticket, secret scan, PoC owner 확인 | 74분에 evidence 경로 확인 |
+<!-- workshop-agenda:end -->
 
----
+## 4. 구간별 진행
 
-## 2. 75분 시간표 (정본)
+### 00–07 — Maroo 문제부터 시작
 
-| 구간 | Step | 진행자 행동 | 참가자 산출물 | 라벨 | 장애 시 링크 |
-|---|---|---|---|---|---|
-| 00–10 | 0 준비 확인 | T1 에서 `eth_chainId`·`rpc_modules`·잔액·`getParams()` 4개를 시연. `atokrw` 가 나오는 순간 D-1(docs `aokrw`) 을 짚는다. 잔액 0 인 참가자를 P2 백업 지갑에서 즉시 채운다 | S0-1~S0-4 통과 확인(구두 체크) | `[Live Testnet]` | [troubleshooting.md#fallback](troubleshooting.md#fallback) (RPC 무응답 판정), [#faucet-limit](troubleshooting.md#faucet-limit) |
-| 10–25 | 1 OKRW 네이티브 전송 | T1 에서 `cast send … --value 1ether` 1건 시연 → T2 에서 `cast receipt … status` = `true` 와 explorer 페이지. 수수료(8e12+1e12) 를 왜 명시했는지 한 문장. 참가자 전송 동안 순회 | receipt JSON + explorer 링크 + UTC/환경 (S1-1~S1-3, 실패 시 S1-4) = **Track B 결과물 #2** (과제 L363) | `[Live Testnet]` | [#fee-gas](troubleshooting.md#fee-gas), explorer 지연 → [#fallback](troubleshooting.md#fallback) |
-| 25–40 | 2 PCL 읽기 + 거부 재현 | (a) `contractPolicies(0x…0b)` → `EAS_POLICY`·`DENYLIST_POLICY`·admin `0x58eC…804F`; (b) `globalPolicies()`; (c) `cast estimate` 로 거부 → `data` 첫 4바이트를 selector 표로 해독하는 것을 T1 에서 시연; (d) `preCall` 직접 호출 `Unauthorized()` 로 D-6 마무리 | estimateGas 오류 원문 + selector 이름 + UTC (S2-1~S2-4) | `[Live Testnet]` | [#estimategas-reverted](troubleshooting.md#estimategas-reverted), [#policy-template-not-found](troubleshooting.md#policy-template-not-found) |
-| 40–60 | 3 Privacy deposit | P3 에서 정한 분기를 선언. **분기 A**: 진행자 KYC 지갑 + proof 로 `cast send` 1건 → receipt `status 0x1` + `PrivacyDeposit` topic0. **분기 B**: 참가자 각자 `cast estimate --from $ME` 로 결정적 거부를 기록. 어느 분기든 P8 의 성공 표본 tx 를 T2 에서 열어 "실제 성공은 이렇게 생겼다" 를 보여 준다 | S3-A1/A2 또는 S3-B1/B2 + S3-C | `[Live Testnet]` | [#no-method-with-id](troubleshooting.md#no-method-with-id), [#deposit-value-required](troubleshooting.md#deposit-value-required), [#fee-gas](troubleshooting.md#fee-gas), 대체 → [#fallback](troubleshooting.md#fallback) |
-| 60–75 | 4 정리·토론·다음 단계 | §3 의 토론 질문(Step 별 1~2개) 중 시간에 맞게 선택. evidence 정리·비밀정보 grep 을 함께 실행. 종료 후 결정 사항 3개(participant-guide 마지막 절) 를 읽어 준다 | S4-1~S4-3 (구두) + evidence 디렉터리 정리 완료 | 토론: 라벨 없음 / 대체 경로 사용 시 `[Local]`·`[Simulation]` | [#fallback](troubleshooting.md#fallback) 의 참가자 안내 문구 |
+“오늘의 제품 대상과 외부 호출 기준은 Maroo Testnet이다. Clairveil은 그 사이에서 `x/privacy` proof·note·scanner를 실제로 확인하는 구현 참고다”라고 선언한다.
 
----
+- **Success criteria:** O1 역할·가시성 가설 완성.
+- **토론 질문:** 직원 EVM 주소로 native transfer하지 않는 이유는 무엇인가?
 
-## 3. Step 별 토론 질문 · 기대 답 · 흔한 오답 패턴
+### 07–17 — 공통 환경 setup
 
-근거는 docs 문장(WebFetch 2026-09-02) 또는 탐색 가이드 실측으로 한정했다.
+설치는 사전 과제로 끝내되 수업 중 전원이 다음 readiness를 같은 순서로 실행한다.
 
-### Step 0
+```bash
+bun --version
+go version
+anvil --version
+cast --version
+forge --version
+git -C ../clairveil rev-parse HEAD
+bun install --cwd demo --frozen-lockfile
+bun run demo/scripts/check-workshop-environment.ts
+bun run --cwd demo typecheck
+```
 
-**Q0-1. chainId 를 `.env` 에 적어 두고 있는데 왜 굳이 `eth_chainId` 로 다시 확인하나?**
-- 기대 답: 서명에 들어가는 chainId 가 틀리면 브로드캐스트에서 거절된다. 라이브 문자열은 `incorrect chain-id; expected 450815, got 1`(-32000) 이고, docs `send-transaction` 은 이를 `-32602 Invalid signature` 로 적고 있어 문서만 보면 원인을 못 찾는다(가이드 §5.1-⑥). docs `maroo-network-parameters` 도 하드코딩을 말린다(가이드 §2.1-12).
-- 흔한 오답: "지갑(MetaMask)이 알아서 맞춘다" — 스크립트·cast 경로에는 지갑이 없다.
+환경 checker는 secret을 읽거나 node를 시작하지 않는다. 도구 설치와 지정 source만 확인한다. 이어 `.env` 역할과 개인 plan을 확인한다. 누락된 바이너리는 setup 지원으로 보내고, 14분에도 해결되지 않으면 해당 참가자는 제공 evidence를 판독하는 observer로 전환하되 종료표에는 “본인 실행 미완료”로 남긴다.
 
-**Q0-2. `getParams()` 가 `atokrw` 를 돌려주는데 docs 는 `aokrw` 다. 코드에는 뭘 쓰나?**
-- 기대 답: 체인이 돌려주는 값을 읽어 쓰고(하드코딩 금지), 차이는 재현 명령과 함께 D-1 로 기록한다(과제 L140-142). 이벤트 `PrivacyDeposit.amount` 문자열과 전역 정책 tokens 도 `atokrw` 다(가이드 §5.1-①).
-- 흔한 오답: "Docs 가 정본이니 `aokrw` 를 써야 한다" — 과제 L138 의 '기준' 은 인터페이스·ABI·주소이고, L140-141 은 차이를 숨기지 말고 기록하라는 뜻이다.
+- **Success criteria:** `WORKSHOP ENVIRONMENT READY`, typecheck, Clairveil SHA, company/employee 역할 분리.
+- **토론 질문:** Foundry 설치 확인과 범용 Anvil 실습은 왜 서로 다른가?
 
-### Step 1
+### 17–27 — Maroo readiness
 
-**Q1-1. explorer 첫 화면의 가스 위젯은 7,000 gwei 상당인데 그 값으로 보내면?**
-- 기대 답: baseFee 가 8e12(8,000 gwei 상당) 이므로 maxFee < baseFee 가 되어 포함되지 않는다. RPC `eth_feeHistory`/`cast base-fee` 로 읽은 값을 쓴다(가이드 §5.1-⑦, §2.1-8 EIP-1559 유효가격 = min(maxFee, base+priority)).
-- 흔한 오답: "explorer 값이 최신이다" — Blockscout `gas_prices` 는 7,000 으로 고정 표시됐다(2026-09-02T07:52Z `stats` 재확인).
+참가자별 `doctor.json`, `preflight.json`을 확인한다. 공통 RPC 오류가 30% 이상이면 live broadcast를 중단하고 저장 receipt 판독으로 전환한다. 개인 key/funding 오류는 해당 참가자만 read-only로 전환한다.
 
-**Q1-2. receipt `status 0x1` 이면 끝인가, 확인 블록을 더 기다려야 하나?**
-- 기대 답: docs `maroo-transaction-lifecycle` — "검증자의 과반수(2/3 이상)가 동의하면 블록은 블록체인에 커밋됩니다. 이 시점에서 트랜잭션은 최종 확정된 것으로 간주되며" (WebFetch 2026-09-02). 즉시 finality 라 재조직을 기다릴 필요가 없다.
-- 흔한 오답: "12 confirmations" — 이더리움 PoW/PoS 관행을 그대로 옮긴 것.
+- **Success criteria:** O4 chain 450815, funding pass, public account 분리.
+- **토론 질문:** policy raw response와 “sender가 허용됨”은 같은 주장인가?
 
-### Step 2
+### 27–44 — Clairveil actual `x/privacy` 정상·실패 통제
 
-**Q2-1. `0x…0b` 에 걸린 EAS_POLICY·DENYLIST_POLICY 는 누가 바꿀 수 있고, 참가자는 어디까지 할 수 있나?**
-- 기대 답: admin 이 policyAdmin `0x58eC1E718ff15e5f34591747D47ADf5BccDA804F` 라 참가자는 못 바꾼다(가이드 §2.3-2, §4 A9). 참가자는 자기 컨트랙트에 `deployPclProxy → changeContractPolicies` 로 컨트랙트 범위 정책만 붙일 수 있다(가이드 §2.3-8). 전역 정책은 PolicyAdmin(체인 파라미터) 만.
-- 흔한 오답: "`runOnPcl` 을 호출해 정책을 적용/우회한다" — 그런 함수는 없다(**D-6**). 라이브에서 `preCall` 직접 호출은 `Unauthorized()` `0x82b42900` (가이드 §4 C6).
+한 명령이 정상 payroll과 두 통제 사례를 같은 임시 체인에서 수행한다. 구간을 다음처럼 timebox한다.
 
-**Q2-2. estimateGas 오류 `data` 의 첫 4바이트가 `0x08c379a0` 이면 PCL 거부인가?**
-- 기대 답: 아니다. `0x08c379a0` = `Error(string)`, 즉 비-PCL 문자열 revert(입력 검증·증명 실패 등). docs `privacy-policy-aware-precompile` 은 PCL 거부를 "typed PCL ReasonCode … ABI encoded", executor 실패를 "plain string revert" 로 구분한다(WebFetch 2026-09-02). PCL selector 는 [troubleshooting.md#estimategas-reverted](troubleshooting.md#estimategas-reverted) 표.
-- 흔한 오답: "revert 면 다 컴플라이언스 거부" — 더미 입력으로는 PCL 단계까지 못 간다(가이드 §4 C5; 2026-09-02T07:53Z 재확인 문자열 `encrypted note is not a canonical deposit-note envelope …`).
-- 주의(진행자만): 2026-09-02T07:52:40Z 관측된 타인 tx `0x3839c3…899b` 는 EAS 미인증 거부가 **문자열** `no EAS attestation received for sender (index returned empty): maroo1…` 로 왔다. docs 와 다른 형태다(**D-12**; 같은 calldata 의 `eth_call` 재생으로 재현됨, `../docs/testnet-reference.md` §4.3). 참가자 본인 주소 재현 전까지는 "표본 + 재생" 으로만 말한다(participant-guide Step 2 (c)).
+- **27–35:** 정상 deposit→one-proof batch→EMP-A/B/C scan과 public event 비교.
+- **35–39:** `300→301`을 prepare해 proof/broadcast 전 거부와 treasury note 불변 확인.
+- **39–44:** EMP-B 대신 유효한 EMP-C 주소로 `120`을 전송해 tx 성공, EMP-B 신규 note 0, EMP-C 신규 note 1 확인.
 
-### Step 3
+참가자가 터미널 로그보다 `observationComparison`과 `failureControls`를 읽도록 유도한다. 오지급 사례는 프로토콜 실패가 아니라 승인된 plan과 output 수취인 binding이 빠진 업무 통제 실패다. Clairveil Local에는 Maroo PCL이 없다고 다시 확인한다.
 
-**Q3-1. 거부가 '결정적(deterministic)' 이라는 게 왜 증거가 되나?**
-- 기대 답: 같은 입력·같은 상태에서 누구나 재현되므로 오류 원문·UTC·환경·재현 절차만 있으면 과제 L365 의 요구를 충족한다. docs `pcl-template-eas-policy` 는 "새 attestation이 온체인에 도달하면 동일 트랜잭션이 성공합니다" 라고 해서 거부가 상태에만 의존함을 명시한다(WebFetch 2026-09-02).
-- 흔한 오답: "실패했으니 제출 못 한다" — 과제 L364-366 은 실패 기록과 대체 경로를 허용한다.
+- **Success criteria:** O2·O3 정상 scan 3개, 공개/비공개 관찰 분리, overspend 무상태 거부, 오지급 chain success/payroll failure.
+- **토론 질문:** 왜 두 사례 중 하나만 transaction rejection이며, `code=0`만으로 지급 완료라고 할 수 없는가?
 
-**Q3-2. ZK 로 익명인데 감사(audit)는 어떻게 가능한가? disclosure 는 어디 있나?**
-- 기대 답: 온체인은 증명의 유효성만 검증하고 소유권은 오프체인이다(리뷰 §2.3). 감사 disclosure 는 파일이 아니라 transfer 메시지의 필드로, 감사 master pubkey 가 없으면 transfer 가 거부된다(`proto/clairveil/privacy/v1/tx.proto:87-89`, `x/privacy/keeper/msg_server.go:250-253`; 가이드 §3.3-2). 이 부분은 Maroo 테스트넷에서 실측하지 않았으므로 `[Local]` 코드 근거로만 말한다.
-- 흔한 오답: "`disclosure.json` 을 만들어 제출한다" — 리포의 `*-disclosure.json` 은 공개키 출력일 뿐(리뷰 §2.2).
+### 44–52 — Clairveil/Maroo 매핑, PCL 경계와 Path A/B 확정
 
-### Step 4
+- 공통 개념: deposit, treasury note, nullifier, batch output, recipient scan, disclosure.
+- 다른 계약: asset, runtime, 외부 ABI, PCL, VK·artifact compatibility, scanner format.
+- Path A: adapter provenance, bundle label, target, value, expiry, output 3 확인.
+- Path B: dummy ZK input이고 성공용이 아니라 rejection probe임을 확인.
 
-**Q4-1. 전역 정책과 컨트랙트 정책은 언제, 어디서 평가되나?**
-- 기대 답: 전역 = AnteHandler, EVM 실행 **전**. docs `maroo-transaction-lifecycle` 순서: "서명 검증 → 논스 검사 → 수수료 차감 → 가스 한도 검증 → PCL 평가", "어느 한 단계라도 실패하면 … 표준 SDK 오류 (서명/논스/수수료)이거나 PCL ReasonCode (컴플라이언스)" (WebFetch 2026-09-02). 컨트랙트 정책 = PCL 프록시 `preCall/postCall`(가이드 §2.3-3). Privacy 프리컴파일은 정책 인지 래퍼가 호출당 PolicyOperation **정확히 1개**를 만들어 사전→실행→사후→기록 순으로 평가한다(가이드 §2.2-2; docs "exactly one `ContractPolicyOperation()`").
-- 흔한 오답: "CheckTx 단계 PCL 인터셉터" — docs 에 없는 용어(리뷰 §2.2 L33 판정).
+칠판에 다음 세 줄을 분리해 쓴다.
 
-**Q4-2. Clairveil `make privacy-e2e-smoke` 가 통과하면 오늘 흐름이 로컬에서 검증된 것인가?**
-- 기대 답: 아니다. Clairveil 로컬넷에는 EVM·OKRW·PCL 이 없다(`ls x/` → privacy 하나, `go.mod` 에 evm 없음; 리뷰 §2.1). e2e-smoke 는 Privacy 코어(deposit→transfer→withdraw, `uclair`, Cosmos Msg) 만 `[Local]` 로 검증하고, PCL 연동 래퍼는 비공개 Maroo 바이너리에 있다(가이드 §5.3-①②). 따라서 OKRW→PCL→Privacy 한 tx 흐름은 로컬에서 `[Simulation]`/`[Docs Only]` 다.
-- 흔한 오답: "같은 x/privacy 코드니까 동일" — Docs 의 revert 문자열·가스·nullifier 개수도 Clairveil 과 다르다(가이드 §5.3-③④⑤).
+1. `PCL`: 활성 정책에 따라 effective sender의 denylist/EAS 등 정책을 typed reason으로 거부한다.
+2. `Privacy`: root·nullifier·proof와 가치 보존을 검증한다.
+3. `Application/prover`: 승인된 EMP-B↔shielded-address registry와 payroll plan digest를 실제 output에 결속하고, receipt 뒤 scanner로 대사한다.
 
----
+Maroo private transfer 금액은 PCL operation에서 `value=0`으로 모델링되고 공개 `IPrivacy.transfer` struct에 직원 EVM recipient가 없다는 문서·ABI를 보여준다. 그러므로 별도 recipient identity 정책과 proof binding의 실제 evidence가 없는 상태에서 PCL이 주소 착오를 자동 차단한다고 설명하지 않는다. 반대로 company signer가 denylist이거나 필수 EAS가 없고 해당 정책이 활성화된 경우는 PCL rejection 사례다.
 
-## 4. 밀렸을 때 생략 순서
+참가자가 `bun run demo/scripts/rehearse.ts --offline`을 실행해 EMP-B output metadata에 EMP-C `profileRef`를 넣은 bundle이 broadcast 전에 거부되고 `MAROO ADAPTER RECIPIENT CONTROL PASSED`가 출력되는지 확인한다. 이 결과는 `[Simulation]` metadata guard이며 Maroo-compatible proof의 recipient binding 증거가 아니다.
 
-위에서부터 순서대로 뺀다. 빠진 항목은 라벨을 `[Docs Only]` 로 강등하고 참가자에게 그렇게 말한다.
+모든 참가자가 `COMPANY_ACCOUNT`와 Maroo Privacy target을 비교한 뒤에만 이동한다.
 
-1. Step 2 (b) `globalPolicies()` 필드 해석 → 가이드 §2.3-12 의 트리 요약을 슬라이드로 읽어 준다 `[Docs Only]` (호출 자체는 1초라 남긴다).
-2. Step 2 (d) `preCall` 직접 호출 시연 → D-6 는 말로만 `[Docs Only]`.
-3. Step 3 분기 A(성공 전송) → 분기 B(estimateGas 거부) 만 실행하고, 성공은 P8 표본 tx 로 대체(`[Live Testnet]` 관측이지 참가자 실행이 아님을 명시).
-4. Step 4 토론 → Step 별 질문 2개 중 1개만(Q0-2, Q2-2, Q4-1 우선).
-5. Step 3 전체 → 참가자 실행 없이 표본 tx 2개(성공·거부) explorer 열람 `[Live Testnet] (관측)` + 다음 단계 읽기. 이 경우 SUBMISSION_NOTES Known Limitations 에 기록.
+- **Success criteria:** 실행 카드에 차이 5개와 path·signer·target·예상 결과, PCL/Privacy/application 세 통제 owner가 있고 adapter recipient control marker가 확인됨.
+- **토론 질문:** 정책상 허용된 EMP-C 주소로 EMP-B 급여를 보냈다면 PCL 통과 후에도 어느 검증이 실패해야 하는가?
 
-**절대 빼지 않는 것**: Step 0, Step 1(참가자 본인 tx = 결과물 #2). Step 1 을 못 돌면 그 순간 [troubleshooting.md#fallback](troubleshooting.md#fallback) 으로 전환한다.
+### 52–63 — Maroo deposit→transfer
 
----
+Path B 정본 명령은 다음과 같다.
 
-## 5. 종료 체크리스트
+```bash
+bun run demo/scripts/run.ts --target maroo-testnet --action attempt \
+  --kind privacy-deposit-transfer-probes \
+  --env demo/.env --broadcast --ack-state-change MAROO_TESTNET_ONLY \
+  --out evidence/live-testnet/state-change-attempt.json
+```
 
-- [ ] `evidence/live-testnet/` 파일명이 `<UTC>_<step>_<hash8>.json` / `.png` 규칙과 일치(정본 [../README.md](../README.md)). 예: `20260902T075240Z_step3_3839c31d.json`.
-- [ ] 각 evidence 에 UTC, 명령 원문, 환경(OS/bun/forge·cast 버전), 결과(성공/실패) 가 있다(과제 L365).
-- [ ] 비밀정보 점검: `grep -ril "PRIVATE_KEY\|mnemonic\|bearer" evidence/` 결과 없음. 스크린샷에 개인키·니모닉·bearer 토큰·카카오 인증 화면·실명 없음(과제 L169; 가이드 §8).
-- [ ] `PROVER_BEARER_TOKEN` 폐기(P7).
-- [ ] 이번 회차 분기(A/B) 와 실측 TODO 항목을 SUBMISSION_NOTES Validation 표에 UTC 와 함께 기록.
-- [ ] 라이브 장애가 있었다면 전환 시각·판단 근거·대체 경로 결과를 같은 표에 기록하고 라벨을 `[Local]`/`[Simulation]` 으로.
-- [ ] 참가자별 S0~S4 통과 여부 메모(구두 체크 결과).
+runner가 deposit raw transaction의 terminal evidence를 얻은 뒤 transfer를 제출하는지 확인한다. Path A 참가자는 deposit receipt와 treasury note scan이 성공한 뒤에만 batch로 이동한다.
+
+- **Success criteria:** 성공이면 receipt/event/scan, 실패면 두 tx hash 또는 RPC failure의 UTC·stage·환경·재현 명령.
+- **토론 질문:** 왜 employee key가 아니라 company key가 두 호출을 서명하는가?
+
+### 63–69 — receipt·delivery와 오류 경계
+
+Maroo deposit receipt, transfer receipt, EMP-A/B/C delivery, audit disclosure를 각각 성공·거부·누락·미검증으로 판정한다. Path B 참가자는 Maroo 직원 수신을 “발생하지 않음/미검증”으로 적는다. Clairveil scan은 판정 방법의 참고 결과로 옆 열에 둔다.
+
+local validator → RPC stage → PCL → Privacy/proof → scanner/auditor → business reconciliation 순서로 첫 실패 계층을 찾는다. PCL typed selector가 없는 오류를 PCL rejection으로 단정하지 않고, receipt 성공·의도 불일치는 `business-intent failure`로 적는다.
+
+- **Success criteria:** receipt/delivery/business intent가 별도 열에 있고, 첫 실패 계층과 `[Local]`/`[Live Testnet]`/`[Simulation]` label이 섞이지 않음.
+- **토론 질문:** chain 성공·scan 실패와 raw reason 없는 revert를 각각 어떻게 처리해야 하는가?
+
+### 69–75 — 종료
+
+O1~O6, label, 미검증 항목, 다음 owner, evidence 위치를 확인한다. private key/mnemonic이 발견되면 업로드를 중단하고 테스트 키를 교체한다.
+
+- **Success criteria:** 6개 성과 판정, secret-free evidence, 4~8주 owner.
+- **토론 질문:** 다음 PoC의 첫 blocker는 prover/VK, PCL/EAS, custody, scanner 중 무엇인가?
+
+## 5. 장애 시 대체 진행
+
+| 장애 | 진행자 조치 | 얻는 것 | 얻지 못하는 것 |
+|---|---|---|---|
+| Clairveil SHA 불일치 | 지정 commit으로 맞춘 뒤 ready 재실행 | source provenance | 당일 local proof |
+| Go build·artifact 생성 지연 | 전날 만든 local evidence로 판정 실습 | proof/note/scan 구조 이해 | 본인 local tx·proof |
+| Clairveil node·proof 실패 | `--keep-on-failure` 경로와 로그 수집 후 저장 evidence 사용 | 정확한 local 실패 증거 | local happy path |
+| Maroo RPC 장애 | 저장 live receipts를 `cast`로 판독 | receipt/오류 분류 | 당일 RPC submission |
+| funding/key 실패 | read-only doctor와 저장 receipt 사용 | address/policy 이해 | 본인 state change |
+| 호환 Maroo prover 없음 | Path B actual rejection 실행 | Maroo target·signer·broadcast·revert | valid deposit, outputs, scans |
+| Maroo scanner 없음 | chain receipt까지 판정하고 미검증 표시 | delivery 경계 이해 | Maroo 직원 ownership 확인 |
+| 모든 실행 불가 | offline rehearsal JSON 대사 | validation 규칙 | 실제 chain/proof |
+
+대체 진행은 evidence label을 승격하지 않는다.
+
+## 6. 종료 체크리스트
+
+- [ ] 참가자마다 path와 evidence 위치가 있다.
+- [ ] Clairveil deposit·one-proof batch·EMP-A/B/C scan을 직접 판정했다.
+- [ ] public/employee 관찰 차이와 overspend·오지급 통제 결과를 직접 판정했다.
+- [ ] Maroo doctor/preflight를 완료했다.
+- [ ] Maroo deposit→transfer를 성공 또는 정확한 failure로 닫았다.
+- [ ] Maroo EMP-A/B/C scan과 audit를 성공/누락/미검증으로 구분했다.
+- [ ] PCL·Privacy/proof·RPC 오류 계층을 구분했다.
+- [ ] 정책상 허용된 잘못된 수취인은 PCL 단독으로 방지되지 않으며 address registry·plan binding·scan 대사가 필요함을 설명했다.
+- [ ] Clairveil 결과를 Maroo 성공으로 표시하지 않았다.
+- [ ] evidence에 비밀정보가 없다.
+- [ ] 각자 4~8주 PoC owner를 정했다.
+
+## 7. 워크숍 종료 후
+
+24시간 안에 공통 오류를 계층별로 집계한다. 1주 안에 Clairveil 참고 구현과 Maroo prover/VK/scanner의 compatibility owner, PCL/EAS owner, employee↔shielded-address registry owner를 정하고, 4주 안에 승인된 plan/output binding을 포함한 합성 직원 3~10명의 Maroo Testnet success run 또는 명확한 blocker report를 만든다.

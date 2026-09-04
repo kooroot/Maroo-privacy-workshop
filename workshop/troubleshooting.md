@@ -1,259 +1,280 @@
-# 트러블슈팅 — 흔한 오류 8개 + 라이브 장애 시 대체 진행
+# Troubleshooting — 원인·증상·확인·해결
 
-형식: 증상(원문) / 원인 / 확인 방법(명령) / 해결. 근거가 있는 항목만 실었다. 라벨은 `[Live Testnet]` `[Local]` `[Simulation]` `[Docs Only]` (과제 L158). `[Live Testnet]` 값은 2026-09-02 05:18–05:42 UTC(탐색 가이드) 와 07:52–07:56 UTC(재확인) 에 chain 450815 에서 읽기 전용으로 확인했다.
+원칙은 “첫 실패 계층”을 찾는 것이다. local validator → RPC transport → PCL policy → Privacy input/proof/state → scanner/auditor → business reconciliation 순서로 본다. 모든 revert를 PCL 거부라고 부르지 않고, receipt 성공 뒤 의도 불일치는 business-intent failure로 분류한다.
 
-공통 변수는 [participant-guide.md](participant-guide.md) §0 의 공통 환경 블록(`cd demo` → `source .env` → `RPC`, `EXPL`, `OKRW`, `PCL`, `EAS`, `PRIV`, `ME`) 을 전제한다.
+오류 evidence에는 label, UTC, 실행 환경, 원명령, 종료 코드, stdout/stderr 또는 JSON-RPC `error.code/message/data`, 사용한 adapter version을 남긴다. private key, mnemonic, witness, plaintext note는 남기지 않는다.
 
-| # | 앵커 | 증상 한 줄 |
+## 빠른 분류
+
+| 실패 위치 | 대표 단서 | 분류 |
 |---|---|---|
-| 1 | [#no-method-with-id](#no-method-with-id) | `no method with id: 0x68a36263` |
-| 2 | [#estimategas-reverted](#estimategas-reverted) | `eth_estimateGas` → `execution reverted` + 오류 데이터 |
-| 3 | [#deposit-value-required](#deposit-value-required) | `privacy deposit value is required` |
-| 4 | [#faucet-limit](#faucet-limit) | faucet 이 거부하거나 잔액이 0 |
-| 5 | [#fee-gas](#fee-gas) | `insufficient funds …` / `intrinsic gas too low` / 포함 안 됨 |
-| 6 | [#policy-template-not-found](#policy-template-not-found) | revert `0x6a2b23be…` = `PolicyTemplateNotFound(string)` |
-| 7 | [#cosmos-rest-grpc](#cosmos-rest-grpc) | `:1317`/`:9090`/`abci_info` 를 찾는데 없음 |
-| 8 | [#local-port-conflict](#local-port-conflict) | `[Local]` `make privacy-e2e-smoke` 포트 충돌 |
-| — | [#fallback](#fallback) | 라이브 장애 시 대체 진행 |
+| bundle validator | selector/plan/output/expiry 오류 | client preparation |
+| HTTP/JSON-RPC | timeout, non-2xx, method error | infrastructure |
+| revert data custom selector | PCL reason table과 일치 | policy |
+| `0x08c379a0` 또는 문자열 | proof/root/nullifier/value 등 | Privacy execution |
+| receipt `0x1`, scan 실패 | tx 성공 후 delivery evidence 문제 | scanner/key/cursor |
+| scan 성공, audit 실패 | key epoch/digest/decrypt 문제 | audit delivery |
 
----
+## 오류별 대응
 
-<a id="no-method-with-id"></a>
-## 1. `no method with id: 0x68a36263` — 구 deposit selector (D-3)
+### T1. ABI selector 또는 target 불일치
 
-**증상(원문)** `[Live Testnet] (2026-09-02T07:53Z)`
-- `cast call`: `Error: server returned an error response: error code 3: execution reverted: no method with id: 0x68a36263, data: "0x08c379a0…"`
-- curl `eth_call`: `{"code":3,"message":"execution reverted: no method with id: 0x68a36263","data":"0x08c379a0…"}`
-- 온체인 표본: `0xe38734cb1e4b299b65b9135418b46baa93f8f5f5a9f7594258f6775997d78a90` (2026-08-26T09:19:46Z, explorer `revert_reason` = `Error(string)` `no method with id: 0x68a36263`, gas_used 1,250,000 — 실패해도 가스를 썼다)
+**증상:** `validate-request.ts`가 selector/target/calldata 오류로 종료하거나 `eth_estimateGas`가 즉시 “function not found” 계열로 실패한다.
 
-**원인**: Clairveil `examples/clairveil-dapp/public/app.bundle.js` 의 ABI 가 구형 `deposit((string,bytes,bytes))` = `0x68a36263` 이다(가이드 §3.4-5). 현재 테스트넷은 `deposit((bytes,bytes,bytes))` = `0xe6eb7771` 만 받는다(docs contract-privacy-deposit; 가이드 §5.1-③ **D-3**). 2026-06-24 이전 tx 는 구 ABI 로 성공했었다(가이드 §5.1-③).
+**원인:** Clairveil 예제의 Cosmos/옛 EVM 형태를 Maroo ABI로 사용했거나, `deposit`과 `singleProofBatchTransfer` bundle을 뒤바꿨다. target이 `0x100…000b`가 아니다.
 
-**확인 방법**
+**확인:**
+
 ```bash
-cast sig "deposit((string,bytes,bytes))"   # 0x68a36263  (구)
-cast sig "deposit((bytes,bytes,bytes))"    # 0xe6eb7771  (현재)
-cast tx --rpc-url $RPC 0x<내 tx hash> input | head -c 10   # 내가 보낸 selector
+cast sig 'deposit((bytes,bytes,bytes))' # 0xe6eb7771
+cast sig 'singleProofBatchTransfer((bytes,bytes,bytes[],(bytes,bytes,bytes,uint32,uint8,bytes,bytes,bytes,bytes,bytes,bytes)[],string,uint64,bytes,uint64))' # 0x3bbb329b
+bun run demo/scripts/validate-request.ts --plan demo/fixtures/payroll-plan.json --bundle <bundle> --live
 ```
 
-**해결**: 인코딩을 `deposit((bytes,bytes,bytes))` 로 바꾼다. `noteCommitment` 는 `string` 이 아니라 `bytes`. Clairveil dApp 번들을 그대로 테스트넷에 붙이지 않는다(가이드 §3.4-5 "이 dApp을 그대로 테스트넷에 붙이면 실패한다"). cast 예시는 participant-guide Step 3.
+JSON 파일의 문자열 앞 10자를 보는 대신 실제 `calldata` 필드 앞 10자를 확인한다. `jq -r .calldata <bundle> | cut -c1-10`을 쓸 수 있다.
 
----
+**해결:** adapter를 `@maroo-chain/contracts@0.0.8`의 `IPrivacy.sol` ABI로 다시 빌드한다. target/selector를 강제로 바꿔 validator만 통과시키지 말고 proof와 encoded request를 함께 다시 생성한다.
 
-<a id="estimategas-reverted"></a>
-## 2. `eth_estimateGas` → `execution reverted` + 오류 데이터 해독
+<a id="t2-estimate-revert"></a>
 
-**증상(원문)**
-- docs `estimate-gas` `[Docs Only]`: `-32000` "시뮬레이션된 호출이 revert되었습니다(대상 컨트랙트의 throw, PCL 정책 거부 등)" (WebFetch 2026-09-02).
-- 라이브 `[Live Testnet] (2026-09-02T07:53Z)` (curl, 더미 입력, value 1e18): `{"code":3,"message":"execution reverted: encrypted note is not a canonical deposit-note envelope: encrypted envelope is shorter than the 20-byte header: invalid request","data":"0x08c379a0…"}` — 코드가 `-32000` 이 아니라 `3` 이다(가이드 §5.1-⑥ 의 eth_call 관측과 같은 결).
-- `cast estimate`: `Error: server returned an error response: error code 3: execution reverted: <문자열>, data: "0x…"`
+### T2. `eth_estimateGas` reverted — PCL인지 Privacy인지 모름
 
-**원인**: 두 부류다(docs privacy-policy-aware-precompile, WebFetch 2026-09-02: PCL 거부는 "typed PCL ReasonCode … ABI encoded", executor 실패는 "plain string revert").
-- (a) 비-PCL 문자열 revert — `data` 가 `0x08c379a0`(`Error(string)`) 으로 시작. 입력 검증이 PCL 보다 먼저라 더미 입력은 여기서 끝난다(가이드 §4 C5). 2026-09-02T07:53Z 관측 순서: 커밋먼트 0 → `note commitment must be non-zero: invalid request`; 커밋먼트 있음·proof 없음 → `deposit proof is required: invalid request`; proof 있음·envelope 없음 → `encrypted note is not a canonical deposit-note envelope: … 20-byte header: invalid request`.
-- (b) PCL 커스텀 오류 — `data` 가 아래 표의 selector 로 시작. `0x…0b` 에는 EAS_POLICY + DENYLIST_POLICY 가 걸려 있으므로(가이드 §4 A9) 정식 입력으로 미인증 sender 가 가면 EAS 계열이 예상된다(미실측).
+**증상:** `maroo-testnet` adapter의 `submit` action이 `execution reverted`로 끝난다.
 
-**selector 표** (`cast sig` 로 2026-09-02 검증; 시그니처 원문은 docs pcl-reason-codes, WebFetch 2026-09-02)
+**원인:** local contract는 통과했지만 sender policy, proof, root, nullifier, value 등 체인 상태 검사가 실패했다.
 
-| selector | 시그니처 | 부류 | 비고 |
-|---|---|---|---|
-| `0x08c379a0` | `Error(string)` | 비-PCL 문자열 | 문자열을 읽는다 |
-| `0xbca5593e` | `EasNoAttestationReceived(address)` | PCL/EAS | 이 스키마로 attestation 을 받은 적 없음. EAS_POLICY 검사 순서 1번(docs pcl-template-eas-policy) |
-| `0x1a152487` | `EasAttestationRequired(address)` | PCL/EAS | catch-all, 검사 순서 마지막 |
-| `0x30d7cfd1` | `AnyOfRejected(bytes[])` | PCL/논리 | 자식 revert 배열을 감쌈 |
-| `0x0201b218` | `InDenylist(address)` | PCL | denylist |
-| `0x82b42900` | `Unauthorized()` | PCL/설정 | 훅 직접 호출 등 `[Live Testnet]` |
-| `0x6a2b23be` | `PolicyTemplateNotFound(string)` | PCL/설정 | 항목 6 `[Live Testnet]` |
-| `0xec8860d9` | `UnauthorizedMinter(address,address)` | OKRW | 비발행자 `mint` `[Live Testnet]` |
+**확인:** raw JSON-RPC의 `error.data`를 보존한다.
 
-EAS_POLICY 실패 코드 순서 `[Docs Only]` (docs pcl-template-eas-policy): `EasNoAttestationReceived` → `EasAttestationRevoked` → `EasAttestationExpired` → `EasAttestationLookupFailed` → `EasAttestationRequired`(catch-all). "새 attestation이 온체인에 도달하면 동일 트랜잭션이 성공합니다".
-
-**확인 방법**
 ```bash
-DATA=0x<응답의 data>
-echo ${DATA:0:10}
-cast decode-error --sig "Error(string)" $DATA
-cast decode-error --sig "EasNoAttestationReceived(address)" $DATA
-cast decode-error --sig "EasAttestationRequired(address)" $DATA
-cast decode-error --sig "AnyOfRejected(bytes[])" $DATA
+cast estimate --rpc-url "$MAROO_RPC_URL" --from "$COMPANY_ACCOUNT" \
+  --value <deposit-value-if-any> "$MAROO_PRIVACY_PRECOMPILE" --data <calldata>
 ```
-`--sig` 없이 실행하면 openchain 조회를 시도하는데 이 selector 들은 등록돼 있지 않다(`cast 4byte 0xe6eb7771` → `No matching function signatures found`, 2026-09-02). 항상 `--sig` 를 준다.
 
-**해결**
-- (a) 문자열이면 입력을 고친다: 커밋먼트 비-0, proof 필수, envelope 는 20바이트 헤더 이상. 정식 입력 생성은 participant-guide Step 3 "입력 생성"(TODO(구현)).
-- (b) EAS 계열이면 두 갈래: KYC(`https://kyc-testnet.maroo.io`, 카카오) 로 attestation 을 받아 분기 A, 또는 그 오류 원문·UTC·환경·재현 명령을 그대로 기록해 분기 B(과제 L365).
-- 주의 `[Live Testnet] (타인 tx)`: 2026-09-02T07:52:40Z 의 온체인 거부 `0x3839c31d1b5625bd59b5251f6595b3e50ffb451aab93389fdbc488f30ee3899b` 은 `Error(string)`: `no EAS attestation received for sender (index returned empty): maroo1et9t9l3tytvtkjj6g32jwe23305vs37scfk7f3` 로 왔다(gas_used 1,750,000 / gas_limit 3,500,000, value 10 OKRW). EAS 미인증 거부가 (b) 가 아니라 (a) 형태로 온 표본이다. 같은 input 을 미인증 주소(`0x…dEaD`)로 `eth_call`/`eth_estimateGas` 재생해도 같은 문자열이 나와 SUBMISSION_NOTES **D-12** 로 등재했다(`../docs/testnet-reference.md` §4.3, §6.4 재확인 블록). 본인 주소 재현은 TODO(실측: `--from $ME` 재생 로그).
+- `0x08c379a0`: Solidity `Error(string)` 계열. Privacy 입력/상태 오류일 가능성이 높다.
+- `0x1a152487`: `EasAttestationRequired(address)`.
+- `0xbca5593e`: `EasNoAttestationReceived(address)`.
+- `0x30d7cfd1`: `AnyOfRejected(bytes[])`.
+- `0x0201b218`: `InDenylist(address)`.
 
----
+selector가 표에 없으면 추측하지 말고 raw data를 남긴다.
 
-<a id="deposit-value-required"></a>
-## 3. `privacy deposit value is required` — `msg.value` 가 0
+**해결:** PCL selector면 attestation/policy principal을 고친다. 문자열이면 decode한 입력 계층을 고친다. dummy proof로 PCL이 반드시 실행된다고 가정하지 않는다. Privacy prepare가 먼저 실패할 수 있다.
 
-**증상(원문)**: revert 문자열 `privacy deposit value is required` (docs contract-privacy-deposit 원문 "`msg.value`가 전달되지 않았을 때 일반 문자열로 revert됩니다. `deposit`은 `payable`이며 `aokrw` 단위의 양의 값이 필요합니다", en "Plain-string revert when the call carries no `msg.value`", WebFetch 2026-09-02; 가이드 §4 C1 `[Live Testnet] (05:18–05:42Z)`).
+<a id="t3-spent-nullifier"></a>
 
-**원인**: `deposit` 은 payable 이고 금액은 struct 가 아니라 `msg.value` 로 전달된다(docs contract-privacy-deposit "예치 금액은 EVM의 `msg.value`로 전달합니다"). `--value` 를 빠뜨리거나 0 을 주면 이 문자열이 난다. 같은 페이지의 나머지 revert 3개: `privacy deposit actor must be the non-zero operator`, `privacy precompile only supports native denom`, `invalid fixed privacy deposit funder`.
+### T3. spent nullifier / replay 거부
 
-**확인 방법**
+**증상:** 처음 batch는 성공했지만 같은 bundle의 estimate나 재전송이 nullifier/spent 계열로 실패한다.
+
+**원인:** 입력 note는 이미 소비됐다. 성공 응답을 놓쳤다고 새 envelope로 다시 서명한 경우도 같다.
+
+**확인:** 먼저 기존 tx hash의 receipt를 조회하고, bundle의 nullifier digest와 scanner/indexer 상태를 비교한다. replay는 broadcast하지 않고 estimate만 한다.
+
 ```bash
-cast estimate --rpc-url $RPC --from $ME --value 0 $PRIV "deposit((bytes,bytes,bytes))" "($NOTE,$ENC,$PROOF)"
+cast receipt --rpc-url "$MAROO_RPC_URL" <known-tx-hash>
+bun run demo/scripts/run.ts --target maroo-testnet --action submit --plan demo/fixtures/payroll-plan.json \
+  --bundle evidence/live-testnet/payroll-bundle.json --env demo/.env
 ```
-주의: 2026-09-02T07:53Z 재확인에서는 더미 입력이면 항목 2-(a) 의 입력 검증 문자열이 **먼저** 나왔다(커밋먼트 0 + value 0 → `note commitment must be non-zero`; 커밋먼트 있음 + value 0 → `deposit proof is required`). 가이드 C1 은 같은 명령으로 `privacy deposit value is required` 를 봤다고 기록하므로 검사 순서가 입력·시점에 따라 다를 수 있다. 정식 입력 + `--value 0` 의 본인 재현은 TODO(실측). 단 attestation 있는 발신자의 value 0 deposit 이 라이브에서 **성공**한 표본(`0x83a1289ef6498763f838a8d07ae6690668b488f2ba633129b29acc1e78935aaa`, 2026-09-02T07:58:22Z, `amount "0atokrw"`)이 있어 docs 의 value 필수 검사는 강제되지 않는다(**D-13**, `../docs/testnet-reference.md` §4.2).
 
-**해결**: `--value <금액>` 을 준다(단위 wei = atokrw; `1ether` = 1e18 atokrw = 1 OKRW, `cast to-wei 1 ether` → `1000000000000000000`). forge script 경로에서는 `IPrivacy(PRIV).deposit{value: 1 ether}(…)`, cast 경로에서는 `--value 1ether`. 참고로 Clairveil 64비트 상한(≈18.44 OKRW, `x/privacy/types/amount.go:8`) 이 Maroo 회로에도 적용되는지는 근거 없음(가이드 §5.3-⑥, §7) — 1 OKRW 로 시작한다.
+**해결:** 이미 성공한 tx면 delivery scan만 재시도한다. 실제 미포함이고 input이 unspent일 때만 저장된 동일 signed bytes 재전송 정책을 검토한다. 새 root/proof로 작업을 재작성할 때는 새 operation ID와 승인 절차를 사용한다.
 
----
+### T4. stale root / unknown root
 
-<a id="faucet-limit"></a>
-## 4. faucet 이 거부하거나 잔액이 0 (D-7)
+**증상:** proof는 생성됐지만 estimate가 root를 찾지 못하거나 오래됐다고 거부한다.
 
-**증상(원문)**: `cast balance --ether $ME` → `0`; faucet 페이지에서 요청이 거부됨(문구는 TODO(실측: 브라우저 화면)). `POST /api/sendToken` 을 스크립트로 호출하면 captcha 없이는 400(가이드 §5.5).
+**원인:** scan 후 proof 제출까지 지연됐거나, adapter가 다른 네트워크/height의 Merkle root를 사용했다.
 
-**원인** `[Live Testnet]` **D-7** (가이드 §5.5): 요청당 5,000 tOKRW · 10분당 5회 · 잔액 10,000 이상이면 거부 · RainbowKit 지갑 연결 + reCAPTCHA v3 필수 · 로그인 없음. docs testnet-access·getting-started 어디에도 faucet 한도 언급이 없다(testnet-access 원문 "파우셋에서 테스트 tOKRW를 수령합니다", getting-started 원문 "파우셋에서 테스트 OKRW를 받을 수 있습니다" / en "You can get test OKRW from the faucet.", WebFetch 2026-09-02; 가이드 §2.1-2 "파우셋은 '팁'으로만 언급, 한도 없음"). docs 예시 금액 1,500,000 OKRW(docs 의 ethers 예제 원문 `parseEther("1500000")`, 인용) 은 이 한도로 불가(가이드 §5.2-⑫).
+**확인:** bundle `chainId`, root, proof 생성 시각, 현재 chain height, adapter가 scan한 마지막 height를 함께 기록한다. root만 최신 값으로 문자열 교체해서는 안 된다.
 
-**확인 방법**
+**해결:** 동일 chain에서 note를 다시 scan하고 최신 root에 맞춰 witness와 proof 전체를 재생성한다. 기존 bundle은 실패 evidence로 보존하고 broadcastable을 false로 내린다.
+
+### T5. receipt 성공 후 employee output scan 실패
+
+**증상:** batch receipt와 `outputCount=3`은 성공했지만 EMP-A/B/C 중 하나가 `owned` report를 만들지 못한다.
+
+**원인:** 잘못된 profile/view key, cursor가 tx 이전 height에 멈춤, view tag false-negative 처리, ciphertext/commitment 바인딩 오류가 가능하다.
+
+**확인:** 실패 직원의 profile ref(비밀키 아님), start/end cursor, tx hash, expected output index/commitment, decrypt/commitment-recompute 결과를 확인한다. 다른 직원의 report를 복사해 채우지 않는다.
+
+**해결:** safe rescan으로 cursor를 tx 이전부터 되돌리고, decrypt한 NoteV1 commitment를 재계산한다. 그래도 실패하면 chain tx를 다시 보내지 말고 `DeliveryPending` 또는 adapter 고유 실패 상태로 운영 이슈를 연다.
+
+### T6. expired payload 또는 60초 미만 여유
+
+**증상:** `validate-request.ts`가 expiry로 거부하거나 chain이 만료 오류를 반환한다.
+
+**원인:** proof queue, 개인 검토, RPC 지연 사이에 `expiresAtUnix`가 지났다.
+
+**확인:** 현재 UTC epoch와 bundle expiry, proof 생성 시간을 비교한다.
+
 ```bash
-cast balance --rpc-url $RPC --ether $ME
-curl -s -m 10 -o /dev/null -w '%{http_code}\n' https://faucet.maroo.io/     # 200 (2026-09-02T07:54Z)
+date -u +%s
 ```
-faucet URL 은 docs testnet-access(`https://faucet.maroo.io`; 페이지 제목 "Maroo Faucet - Get Test Tokens", 2026-09-02).
 
-**해결**: (1) 10분 대기 후 재요청. (2) 진행자 백업 지갑에서 `cast send --value` 로 직접 보낸다(facilitator-guide P2; 명령은 participant-guide Step 1). (3) 잔액이 10,000 이상이라 거부되면 상한 규칙상 잔액을 낮추면 될 것으로 보이나 미실측 TODO(실측). 워크숍 필요량 산식은 facilitator-guide P2.
+**해결:** expiry 숫자만 바꾸지 말고 새 owner-intent에 맞춰 request/proof/calldata를 다시 만든다. workshop에서는 최소 60초보다 넉넉한 TTL을 사전 측정값으로 정한다.
 
----
+### T7. audit decrypt 또는 digest 검증 실패
 
-<a id="fee-gas"></a>
-## 5. 수수료 부족·가스 — `insufficient funds …`, `intrinsic gas too low`, 포함 안 됨
+**증상:** 직원 scan은 성공하지만 audit report가 `verified`가 아니거나 key/digest mismatch다.
 
-**증상(원문)**
-- `insufficient funds for gas * price + value: balance 0, tx cost 189000000000000001, overshot …` `[Live Testnet]` (가이드 §2.1-6)
-- `intrinsic gas too low` (가이드 §4 Phase B-4)
-- tx 가 pending 으로 남음 — maxFee 를 explorer 위젯(7,000 gwei 상당) 으로 잡은 경우(가이드 §5.1-⑦; Blockscout `stats.gas_prices` = 7,000 을 2026-09-02T07:52Z 재확인)
-- 실패 tx 도 가스를 소모함 — 거부 표본 gas_used 1,750,000(항목 2), 구 selector 표본 1,250,000(항목 1)
+**원인:** 잘못된 audit key ID/epoch, 회전 전후 키 혼용, disclosure ciphertext 손상, plaintext digest 계산 규칙 불일치다.
 
-**원인** `[Live Testnet]`: EIP-1559, baseFee 8e12 · priority 1e12 · `eth_gasPrice` 9e12 atokrw(가이드 §2.1-8, §4 A3; 2026-09-02T07:56Z `cast base-fee` → `8000000000000`, `cast gas-price` → `9000000000000`). 단순 전송 21,000 gas ≈ 0.189 OKRW(가이드 §2.1-8). deposit 은 성공 표본 gasUsed 2,239,761 ≈ 2.24M gas ≈ 20 OKRW(가이드 §4 Phase E-3; receipt `0xe492ae2c…0a70` 2026-09-02T07:54Z 재확인, `effectiveGasPrice` 9e12). base fee 는 소각(가이드 §2.1-8).
+**확인:** bundle과 report의 `auditKeyId`, `auditKeyEpoch`, `auditPayloadDigest`, tx hash, plan digest를 비교한다. private audit key를 evidence에 복사하지 않는다.
 
-**확인 방법**
+**해결:** tx가 참조한 epoch의 키로 다시 검증하고 plaintext에서 digest와 총액을 재계산한다. decrypt 실패를 chain failure로 바꾸지 말고 `AuditDeliveryFailed`/manual review로 분리한다.
+
+### T8. PCL/EAS sender 조건 미충족
+
+**증상:** estimate 또는 tx가 EAS/PCL custom reason으로 거부된다.
+
+**원인:** company sender가 필요한 schema attestation을 받지 않았거나 revoked/expired 되었고, 다른 주소가 서명했을 수 있다.
+
+**확인:** 실행 직전 `contractPolicies(IPrivacy)`, global policies, `COMPANY_ACCOUNT`, attestation UID/status를 확인한다. PCL이 실제 보는 principal과 wallet 화면 주소가 같은지 대조한다.
+
+**해결:** 테스트넷 KYC/attestation 절차를 다시 수행하거나 해당 참가자에게 진행자가 사전 검증한 회사 계정을 다시 배정한다. policy admin을 흉내 내거나 정책을 우회하지 않는다.
+
+### T9. faucet·잔액·gas 부족
+
+**증상:** balance 0, insufficient funds, intrinsic gas/base fee 오류, deposit 300 + gas를 감당하지 못한다.
+
+**원인:** faucet 한도/주기, 잘못된 account, gas price 변화, 금액 단위 혼동이다.
+
+**확인:**
+
 ```bash
-cast base-fee --rpc-url $RPC          # 8000000000000
-cast gas-price --rpc-url $RPC         # 9000000000000
-cast balance --rpc-url $RPC --ether $ME
-cast estimate --rpc-url $RPC --from $ME --value 1ether $AUX     # 21000
+cast balance --rpc-url "$MAROO_RPC_URL" "$COMPANY_ACCOUNT"
+cast base-fee --rpc-url "$MAROO_RPC_URL"
+cast gas-price --rpc-url "$MAROO_RPC_URL"
 ```
 
-**해결**: `cast send … --gas-price 9000000000000 --priority-gas-price 1000000000000` 로 max fee ≥ baseFee+priority 를 보장한다(`--gas-price` 는 EIP-1559 에서 max fee per gas, `cast send --help`). 전송 전 `cast estimate` 로 가스와 revert 를 먼저 본다(항목 2). Step 3 는 잔액 ≥ deposit 금액 + ≈20 OKRW 를 확보한다. 잔액이 없으면 항목 4.
+**해결:** 전날 잔액을 준비하고 estimate × gas price + 300e18보다 여유 있게 확보한다. faucet 정책 안에서 재요청하거나 참가자별 사전 검증 계정으로 교체한다. 금액을 즉석 축소하면 plan/bundle/proof를 모두 다시 만들어야 한다.
 
----
+### T10. RPC·explorer·indexer 지연
 
-<a id="policy-template-not-found"></a>
-## 6. `PolicyTemplateNotFound(string)` — 템플릿 이름 오타
+**증상:** timeout/non-2xx, receipt `null`, explorer 404, scanner cursor 정체가 난다.
 
-**증상(원문)** `[Live Testnet] (2026-09-02T07:52Z)`: `cast call … "policyTemplate(string)" NOPE_POLICY` → `Error: server returned an error response: error code 3: execution reverted, data: "0x6a2b23be0000…4e4f50455f504f4c494359…"`.
+**원인:** RPC 장애/rate limit, tx 미포함, explorer indexing 지연은 서로 다른 문제다.
 
-**원인**: 등록되지 않은 템플릿 이름을 조회하거나 정책에 넣었다. 라이브 오류명은 `PolicyTemplateNotFound(string)` `0x6a2b23be` 이고, docs `pcl-policy-templates`/`pcl-precompile-overview` 는 `InvalidPolicyTemplate` 라고 적어 페이지끼리 다르다(가이드 §5.1-⑪, §5.2-②). 라이브에 등록된 템플릿은 9개(7 leaf + 2 composite, 가이드 §2.3-10 `[Live Testnet]`); 2026-09-02T07:56Z `contractPolicies`/`globalPolicies` 출력에서 보인 이름은 `EAS_POLICY`, `DENYLIST_POLICY`, `VOLUME_POLICY`, `PERIODIC_VOLUME_POLICY`, `LOGICAL_POLICY`, `FOR_EACH_POLICY`. 전체 9개 이름은 TODO(실측: 각 이름을 `policyTemplate(string)` 로 조회).
+**확인:**
 
-**확인 방법**
 ```bash
-cast call --rpc-url $RPC $PCL "policyTemplate(string)" EAS_POLICY        # 등록됨 → 데이터 반환
-cast call --rpc-url $RPC $PCL "policyTemplate(string)" NOPE_POLICY       # → 0x6a2b23be…
-cast decode-error --sig "PolicyTemplateNotFound(string)" 0x6a2b23be<…>   # → "NOPE_POLICY"
+curl -sS -m 10 -X POST "$MAROO_RPC_URL" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+cast receipt --rpc-url "$MAROO_RPC_URL" <tx-hash>
+curl -sS -m 10 "$MAROO_INDEXER_URL/stats"
 ```
 
-**해결**: 이름을 등록된 템플릿 이름으로 고친다. docs 의 `InvalidPolicyTemplate` 로 오류를 매칭하는 코드는 라이브에서 잡히지 않는다 — `PolicyTemplateNotFound(string)` 으로 매칭한다.
+**해결:** RPC receipt가 있으면 explorer 지연만으로 tx를 재전송하지 않는다. RPC가 1분 간격 3회 실패하면 [대체 진행](#fallback)을 판정한다. rate limit이면 참가자 20명의 요청을 stagger한다.
 
----
+### T11. Clairveil `x/privacy` 로컬 실습 실패
 
-<a id="cosmos-rest-grpc"></a>
-## 7. Cosmos REST(`:1317`)/gRPC(`:9090`)/`abci_info` 를 찾는데 없음
+**증상:** Go build, ZK artifact 생성, local node 시작, deposit, batch proof, EMP-A/B/C scan 또는 control 단계에서 종료되고 `CLAIRVEIL LOCAL PAYROLL AND FAILURE CONTROLS VERIFIED`가 출력되지 않는다.
 
-**증상(원문)** `[Live Testnet] (2026-09-02T07:52Z)`:
-```
-curl -s -X POST $RPC -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":7,"method":"abci_info","params":[]}'
-{"jsonrpc":"2.0","id":7,"error":{"code":-32601,"message":"the method abci_info does not exist/is not available"}}
-```
-`/status` 는 404, `rpc_modules` 는 `debug/eth/net/rpc/txpool/web3` 뿐(리뷰 §2.1; 가이드 §4 A4). `clairveild tx privacy deposit 10uclair` 같은 명령은 테스트넷에 성립하지 않는다(리뷰 §2.1).
+**원인:** Clairveil commit 불일치, Go module/cache 문제, 임시 port 충돌, ZK artifact checksum 실패, 메모리·디스크 부족, local node 준비 지연 또는 scan 결과 불일치다.
 
-**원인**: Maroo 테스트넷이 외부에 노출하는 것은 EVM JSON-RPC 뿐이다. Clairveil 의 privacy 쿼리(`tree_state`, `commitment/{hex}`, `nullifier/{hex}`, `events`, `reserve/{denom}` 등 15개, `proto/clairveil/privacy/v1/query.proto:1-160` 의 `rpc` 15건, HEAD ca85b02; 가이드 §3.3-5 는 14개로 적었으나 파일이 정본) 는 테스트넷에 노출되지 않는다(가이드 §3.3-5, §7). Docs 의 Indexer 호스트 `api-testnet.maroo.io` 는 DNS 가 없다(**D-5**, 가이드 §5.1-⑤; `dig +short` 빈 응답 2026-09-02T07:52Z).
+**확인:**
 
-**확인 방법**
 ```bash
-cast rpc --rpc-url $RPC rpc_modules
-dig +short api-testnet.maroo.io            # (빈 응답)
-curl -s "https://explorer-testnet.maroo.io/blockscout/api/v2/stats" | head -c 300   # 200
-curl -s -o /dev/null -w '%{http_code}\n' https://explorer-testnet.maroo.io/api/v2/stats  # 404 (가이드 §5.1-⑩)
+go version
+git -C ../clairveil rev-parse HEAD
+bun run demo/scripts/run.ts --target clairveil-local --action ready \
+  --clairveil ../clairveil
+bun run demo/scripts/run.ts --target clairveil-local --action payroll \
+  --clairveil ../clairveil \
+  --keep-on-failure --out evidence/local/payroll-summary.json
 ```
 
-**해결**: 상태 확인은 receipt(`eth_getTransactionReceipt`)·로그(`eth_getLogs`, 상한 -32005 약 10,000건, 가이드 §2.1-11)·Blockscout `/blockscout/api/v2`(`/api/v2` 는 404) 로 한다. `IPrivacy` 에는 view 메서드가 없다(가이드 §2.2-1). Clairveil 로컬넷에서도 REST 는 기본 `enable=false` 다(Clairveil `README.md:93`, `docs/clairveil-getting-started.md`, 가이드 §3.2-1).
+**해결:** 지정 commit으로 맞추고 `go mod download`와 두 command build를 전날 예열한다. `--keep-on-failure`가 출력한 임시 경로의 `clairveild.log`를 검사한 뒤 새 임시 run을 시작한다. 복구가 41분을 넘기면 진행자의 검증된 `[Local]` evidence로 proof·scan 판정을 계속하되 본인 local 실행 미완료를 기록한다. 보존된 임시 키 디렉터리는 공유하지 않는다.
 
----
+### T12. live attempt evidence가 생성되지 않음
 
-<a id="local-port-conflict"></a>
-## 8. `[Local]` `make privacy-e2e-smoke` 포트 충돌
+**증상:** `attempt` action이 종료됐는데 `state-change-attempt.json`이 없거나 `stateChangingTransactionAttempted=false`다.
 
-**증상(원문)**: `clairveild start` 를 켠 채 `make privacy-e2e-smoke` 를 돌리면 기본 포트에서 충돌한다. Clairveil `README.md:93`: "This target creates a separate temporary home and starts its own local node. If a `clairveild start` node is already using the active default RPC, P2P, or gRPC ports (`26657`, `26656`, or `9090`), stop that node first or use e2e port overrides. REST is disabled in the generated `app.toml`; its configured `1317` address binds only when the API is explicitly enabled." 실제 오류 문구는 이 머신 미실행이라 TODO(실측).
+**원인:** 승인 문자열·회사 테스트넷 키·account가 잘못됐거나, Privacy bundle이 로컬 검증/estimate에서 거부됐거나, rejection probe가 transaction 준비 단계에서 실패해 RPC broadcast까지 도달하지 못했다.
 
-**원인**: `scripts/privacy-e2e-smoke.sh:10-15` 기본값 `RPC_PORT=26657 P2P_PORT=26656 ABCI_PORT=26658 GRPC_PORT=9090 API_PORT=1317 PPROF_PORT=6060` 이 실행 중 노드와 같다. 문서 `docs/clairveil-testing-guide.md:303` 은 4개만 적고 스크립트는 6개다(가이드 §5.4-①).
+**확인:** stderr와 recorder의 `stage`를 본다. `prepared`, `bundle-validation`, `rpc-estimate`, `transaction-preparation`은 실제 전송 시도가 아니다. 로컬 서명을 끝내고 `eth_sendRawTransaction`을 호출한 `rpc-broadcast` 이후의 `rejected`만 RPC submission을 호출한 증거다. private key를 명령행이나 오류 파일에 복사하지 않는다.
 
-**확인 방법**
 ```bash
-lsof -nP -iTCP:26657 -sTCP:LISTEN     # 누가 26657 을 쓰는지
-grep -n "_port=" ../clairveil/scripts/privacy-e2e-smoke.sh | head -6   # L10-15 여섯 줄 (../clairveil = demo/README.md §3.1 의 clone 위치)
+bun run demo/scripts/run.ts --target maroo-testnet --action attempt \
+  --kind privacy-deposit-transfer-probes --env demo/.env \
+  --broadcast --ack-state-change MAROO_TESTNET_ONLY \
+  --out evidence/live-testnet/state-change-attempt.json
 ```
 
-**해결** (가이드 §3.2-3; 리뷰 §2.2 L208-219)
+**해결:** 회사 계정/잔액/RPC를 고친 뒤 다시 실행한다. 호환 Privacy bundle이 없을 때는 두 IPrivacy rejection probe를 실제 제출하고 `probes.deposit`과 `probes.transfer`를 각각 판정한다. 무효 ZK 입력의 거부는 유효 Privacy deposit이나 private payroll 성공이 아니다.
+
+### T13. 공통 환경 readiness 실패
+
+**증상:** `anvil`, `cast`, `forge`, `go`, `git` 중 하나를 찾지 못하거나 `check-workshop-environment.ts`가 Bun 버전·Clairveil SHA 오류로 종료한다.
+
+**원인:** Foundry 일부만 PATH에 있거나, 여러 Bun 설치 중 1.4 미만이 선택됐거나, sibling Clairveil checkout이 없거나 지정 commit과 다르다. 이는 privacy transaction 실패가 아니라 실행 전 workstation 문제다.
+
+**확인:** repository root에서 다음을 실행하고 첫 실패 명령을 찾는다.
+
 ```bash
-RPC_PORT=27657 P2P_PORT=27656 GRPC_PORT=9190 API_PORT=1417 make privacy-e2e-smoke
-KEEP_WORK_DIR=1 RPC_PORT=27657 P2P_PORT=27656 GRPC_PORT=9190 API_PORT=1417 make privacy-e2e-smoke   # 산출물 보존
+type -a bun anvil cast forge go git
+bun --version
+anvil --version
+cast --version
+forge --version
+go version
+git -C ../clairveil rev-parse HEAD
+bun run demo/scripts/check-workshop-environment.ts
 ```
-또는 실행 중 노드를 먼저 내린다. 기대 종료 문자열은 `privacy e2e smoke passed`(`scripts/privacy-e2e-smoke.sh:413`). 기본 실행은 `trap cleanup EXIT`(L63) 로 흔적을 남기지 않으므로 증거가 필요하면 `KEEP_WORK_DIR=1`(L7).
 
----
+**해결:** 누락된 도구를 공식 배포 방식으로 설치하고 shell PATH를 다시 불러온다. Bun은 1.4 이상, Clairveil은 `ca85b02708fdd75259d4d2ee2d671c21198cec69`로 맞춘 뒤 checker를 다시 실행한다. 14분까지 해결되지 않으면 제공 evidence를 읽는 observer 경로로 전환하고 “본인 환경·실행 미완료”를 exit ticket에 기록한다. 범용 Anvil chain을 띄워 Maroo 또는 Clairveil 실행을 대신하지 않는다.
+
+### T14. `300→301` overspend가 proof 전에 거부됨
+
+**증상:** Clairveil control의 `prepare-batch-transfer`가 `selected inputs do not fund batch payment total 301uclair`로 종료하고 tx hash가 없다.
+
+**원인:** 사용 가능한 treasury note는 `300uclair`인데 payment 합계가 `301uclair`다. wallet input selection이 가치 보존 불가능을 proof·broadcast 전에 발견한 정상 거부다. Clairveil Local에는 Maroo PCL이 없으며, 이를 PCL 한도 거부라고 부르면 안 된다.
+
+**확인:** `failureControls.overspend`의 `rejectedAt="wallet-input-selection-before-proof"`, `broadcastAttempted=false`, before/after treasury note count와 `treasuryStateUnchanged=true`를 함께 확인한다. 에러 문자열 하나만으로 상태 불변을 추정하지 않는다.
+
+**해결:** 실제 운영에서는 prover를 호출하기 전에 spendable note 합계와 payroll plan 합계를 대사하고 부족하면 deposit·note confirmation 뒤 새 root로 다시 준비한다. 위조된 overspend proof가 제출되면 Privacy 검증이 거부해야 한다. Maroo private transfer의 숨겨진 금액은 PCL operation에서 `value=0`이므로 일반 PCL volume policy가 이 사례를 자동 판별한다고 주장하지 않는다.
+
+### T15. 잘못된 직원 주소인데 transaction이 성공함
+
+**증상:** wrong-recipient control의 transfer가 `code=0`인데 EMP-B의 신규 note는 0이고 EMP-C가 해당 tx의 `120uclair` note를 1개 찾는다.
+
+**원인:** EMP-C shielded address는 형식과 암호학적 조건이 모두 유효하다. Privacy는 proof와 가치 보존을 검증했지만 “이 120은 EMP-B 급여”라는 인사 원장 의도는 알지 못한다. 정책상 허용된 EMP-C라면 PCL 통과도 이 업무 오류를 증명하지 않는다.
+
+**확인:** `failureControls.wrongRecipient`의 `chainOutcome="success"`, `payrollOutcome="failed"`, intended/actual employee ID와 두 scan delta를 같은 tx hash 기준으로 대조한다. PCL 거부라면 receipt 성공이 아니라 IPcl ABI로 디코드되는 typed reason이 있어야 한다.
+
+**해결:** Maroo Path A adapter에서 승인된 employee↔shielded-address registry, payroll plan digest와 prover output binding을 서명 전에 비교해 하나라도 다르면 broadcast하지 않는다. 활성 PCL/EAS 정책은 회사 signer와 정책에 표현된 자격을 별도로 검사한다. 성공 receipt 뒤에도 직원 scanner 대사를 수행하고, 불일치는 자동 완료 처리하지 말고 incident·correction 절차로 넘긴다.
+
+## 실행 장애 시 대체 진행
 
 <a id="fallback"></a>
-## 라이브 장애 시 대체 진행
 
-정본은 이 절이다. facilitator-guide 는 여기로 링크만 건다. 전환하면 그 시각(UTC)·판단 근거·명령 출력을 `evidence/` 와 SUBMISSION_NOTES Validation 에 남긴다(과제 L365-366).
+### 전환 조건
 
-### 전환 판단 기준
+- Maroo RPC가 1분 간격 3회 연속 실패.
+- 공통 환경 checker가 14분까지 통과하지 않음.
+- Clairveil actual local flow가 41분까지 완료되지 않음.
+- prover/VK 호환을 49분까지 확인하지 못함.
+- 직원/감사 adapter가 68분까지 필수 report를 만들지 못함.
 
-| 장애 | 확인 명령 | 정상 `[Live Testnet] (2026-09-02)` | 전환 조건 |
-|---|---|---|---|
-| RPC 무응답 | `curl -s -m 10 -X POST https://rpc-testnet.maroo.io -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'` | `{"jsonrpc":"2.0","id":1,"result":"0x6e0ff"}` | 10초 타임아웃 또는 non-2xx 가 1분 간격 3회 연속 → Step 1~3 를 `[Local]` 로 전환 |
-| faucet 다운 | `curl -s -m 10 -o /dev/null -w '%{http_code}\n' https://faucet.maroo.io/` | `200` | non-200 → 전환이 아니라 진행자 백업 지갑에서 `cast send` 로 분배(항목 4). 백업도 바닥이면 `[Local]` |
-| explorer 지연 | `curl -s -m 10 "https://explorer-testnet.maroo.io/blockscout/api/v2/stats"` 의 `average_block_time` · `curl -s -m 10 -o /dev/null -w '%{http_code}\n' https://explorer-testnet.maroo.io/tx/0xe492ae2ceebda2a9a48691e42aa9ac0a1df5d00d517fb31783216fc7d0770a70` | `1010.0`(ms) · `200` | explorer 만 느리면 전환하지 않는다 — success criteria 의 explorer 링크는 `cast receipt --json` 파일로 대신하고 링크는 사후 보완(TODO 표기). RPC 가 살아 있으면 `[Live Testnet]` 유지 |
-| prover 장애(분기 A) | TODO(실측: proverd 기동 확인 명령) | — | 분기 B(estimateGas 거부) 로 내려간다. 라벨은 그대로 `[Live Testnet]` |
+### Clairveil recorded evidence
 
-### `[Local]` 전환 절차 — Clairveil `make privacy-e2e-smoke`
-
-이 머신은 `~/.clairveil` 이 없다(`make init` 미실행, 2026-09-02). 아래 소요 시간·메모리는 전부 TODO(실측: `time`, `/usr/bin/time -l`, 가이드 §4 Phase D). 자원 계획: 메모리 4 GiB 초과, 디스크 1 GiB 이상(`docs/clairveil-getting-started.md:40`).
+`evidence/local/payroll-summary.json`은 실제 Clairveil deposit, one-proof `BatchJoinSplit16x32`, EMP-A/B/C scan, 공개/직원 관찰 비교, overspend 거부와 오지급 성공의 판정 연습에 사용한다. 참가자 실행이 실패했다면 진행자 evidence를 본인 실행으로 표시하지 않는다. 이것은 Maroo 장애의 자동 fallback이나 Maroo success evidence도 아니다.
 
 ```bash
-cd ../clairveil && git rev-parse HEAD      # ca85b02708fdd75259d4d2ee2d671c21198cec69 (../clairveil = demo/README.md §3.1 의 clone 위치)
-go version && node -v                                                     # go1.25.12 / v22.13.0 (이 머신)
-make init                                  # ~/.clairveil 생성 + artifact 4회로 (소요 TODO(실측))
-source ~/.clairveil/clairveil.env          # 가이드 §3.2-1
-make privacy-e2e-smoke                     # 기대: 'privacy e2e smoke passed' (scripts/privacy-e2e-smoke.sh:413)
-# 노드가 이미 떠 있으면 포트 오버라이드 (가이드 §3.2-3)
-RPC_PORT=27657 P2P_PORT=27656 GRPC_PORT=9190 API_PORT=1417 make privacy-e2e-smoke
-# 로그·산출물 보존 (각 tx JSON, *-report.json, reserve-uclair.json → 가이드 §4 Phase D)
-KEEP_WORK_DIR=1 make privacy-e2e-smoke
+bun run demo/scripts/run.ts --target clairveil-local --action payroll \
+  --clairveil ../clairveil \
+  --out evidence/local/payroll-summary.json
 ```
 
-클린 환경으로 돌리려면 임시 home: `tmp="$(mktemp -d)"; GOBIN="$tmp/bin" CLAIRVEIL_HOME="$tmp/home" make init` (`docs/clairveil-testing-guide.md:257-262`, 가이드 §3.2-5). 정리: `rm -rf "$tmp"`, 그리고 `~/.clairveil.backup-*` 디렉터리(개발 키 포함) 확인 후 삭제(가이드 §3.2-4, §8). `make clean` 은 루트 바이너리만 지운다(`Makefile:164`, 가이드 §3.2-2).
+### Emergency recorded mode
 
-검증 범위 `[Local]`: deposit → private/public/recipient-encrypted transfer → 4 plane decode → direct/relayed withdraw → reserve invariant(가이드 §3.2-3). 체인은 `clairveil-local-1`, denom `uclair`, prefix `clairs`(가이드 §3.1-1). 첫 블록 전 privacy tx 는 `invalid height`(가이드 §3.1-2).
+```bash
+bun run demo/scripts/rehearse.ts --offline --out-dir evidence/simulation/current-run
+```
 
-### `[Simulation]` 으로 강등되는 항목
+JSON 계약과 대사 실패 제어만 보여 준다. proof/chain/decrypt를 실행하지 않으므로 `[Simulation]`이다.
 
-| 워크숍 항목 | `[Local]` 대체 가능? | 강등 라벨 | 근거 |
-|---|---|---|---|
-| Step 1 OKRW 네이티브 전송 | 불가 — Clairveil 에 OKRW 없음(`grep -rniE "okrw"` 0건) | `[Docs Only]` (docs sending-okrw 레시피 낭독) | 가이드 §3.1-4 |
-| Step 2 PCL 정책 읽기·거부 | 불가 — PCL/PolicyOperation 코드 0건 | `[Docs Only]` (가이드 §4 A9 값·§2.3-12 트리 슬라이드) | 가이드 §3.1-4, §5.3-① |
-| Step 3 Privacy deposit | Privacy 코어만 — `uclair`, Cosmos Msg, 증명 필요(`tx.proto:39`) | `[Local]` (e2e-smoke 의 deposit 단계) | 가이드 §3.2-3, §3.3-1 |
-| OKRW→PCL→Privacy **한 tx** 흐름 | 불가 — 래퍼는 비공개 Maroo 바이너리 | `[Simulation]`/`[Docs Only]` | 가이드 §5.3-①② |
-| 노드 없이 1분 데모 | `make reference-payroll-demo` — proof·브로드캐스트 없음(`examples/reference-payroll/README.md:36`) | `[Simulation]` (이 머신 51s `[Local]` 실행 OK, 2026-09-02) | 가이드 §3.5-2 |
+진행자는 마지막에 각 참가자가 달성하지 못한 O2~O5를 명시하고 테스트넷 복구 후 실행할 명령과 owner를 exit ticket에 남긴다.
 
-강등된 항목은 SUBMISSION_NOTES Known Limitations 에 "mock 또는 simulation 으로 처리한 부분" 으로 기록한다(과제 L226-228 영역).
+### 진행자 대체 진행 방식
 
-### 참가자 안내 문구 (그대로 읽는다)
-
-1. "지금 Maroo 테스트넷 RPC 가 응답하지 않아(확인 시각 UTC ___, 명령 `eth_chainId` 3회 실패) 남은 단계는 Clairveil 로컬넷으로 진행합니다. 이 로컬넷에는 EVM·OKRW·PCL 이 없어서 오늘 보는 것은 Privacy 모듈 코어뿐이며, 산출물 라벨은 `[Live Testnet]` 이 아니라 `[Local]`(실행) 또는 `[Simulation]`(체인·증명 없음) 입니다."
-2. "OKRW 전송과 PCL 거부는 로컬에서 재현할 수 없으므로 문서와 오늘 오전 라이브 표본(tx `0xe492ae2c…0a70` 성공, `0x3839c31d…899b` 거부) 화면으로 대신하고 `[Docs Only]` 로 표시합니다."
-3. "테스트넷이 복구되면 participant-guide Step 1~3 을 각자 다시 실행해 `[Live Testnet]` 증거를 채우고, 오늘 로컬 결과는 evidence 에 라벨을 붙여 함께 제출합니다. 실패 자체도 시각·환경·재현 절차와 함께 기록하면 유효한 증거입니다(과제 L365)."
+라이브 서비스가 중단되면 진행자는 실패 화면에서 UTC·환경·재현 명령을 먼저 캡처한다. 이후 Clairveil local proof·scan 판정과 recorded mode로 남은 학습을 진행하되 Maroo 구간을 미완료로 닫는다. Clairveil local evidence는 실제 `[Local]` 결과이지만 당일 `[Live Testnet]` evidence로 제출하지 않는다.

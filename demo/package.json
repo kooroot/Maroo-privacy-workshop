@@ -1,0 +1,29 @@
+{
+  "name": "maroo-confidential-payroll-workshop",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "doctor": "bun run scripts/run.ts --target maroo-testnet --action doctor --env .env.example --offline",
+    "workshop:ready": "bun run scripts/check-workshop-environment.ts",
+    "test": "bun test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "rehearse": "bun run scripts/rehearse.ts --offline",
+    "reset": "bun run scripts/reset-evidence.ts",
+    "verify": "bun run scripts/verify-workshop.ts content && bun run scripts/verify-workshop.ts maroo-first-workshop && bun run scripts/verify-workshop.ts facilitator-maroo-first && bun run scripts/verify-workshop.ts local-boundaries && bun run scripts/verify-workshop.ts links && bun run scripts/verify-workshop.ts adapters && bun run scripts/verify-workshop.ts submission-kit && bun run scripts/verify-workshop.ts typescript && bun run scripts/verify-workshop.ts failure-controls",
+    "submission:draft": "bun run scripts/check-submission.ts --draft",
+    "submission:final": "bun run scripts/check-submission.ts --final",
+    "check": "bun run typecheck && bun run test && bun run doctor && bun run rehearse && bun run verify && bun run submission:draft && bun -e \"console.log('DEMO PACKAGE VERIFIED: typecheck, tests, doctor, rehearsal, Clairveil evidence, adapters, and submission kit')\""
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "dependencies": {
+    "@maroo-chain/viem": "0.3.0",
+    "viem": "2.56.3"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "7.0.2"
+  }
+}

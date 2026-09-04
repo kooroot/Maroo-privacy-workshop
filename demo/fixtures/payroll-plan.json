@@ -1,0 +1,26 @@
+{
+  "schema": "maroo-workshop/payroll-plan@1",
+  "batchId": "COMPANY-01-2026-09-PAYROLL",
+  "asset": {
+    "symbol": "OKRW",
+    "decimals": 18
+  },
+  "totalBaseUnits": "300000000000000000000",
+  "employees": [
+    {
+      "id": "EMP-A",
+      "amountBaseUnits": "100000000000000000000",
+      "profileRef": "workshop-profile://company-01/emp-a"
+    },
+    {
+      "id": "EMP-B",
+      "amountBaseUnits": "120000000000000000000",
+      "profileRef": "workshop-profile://company-01/emp-b"
+    },
+    {
+      "id": "EMP-C",
+      "amountBaseUnits": "80000000000000000000",
+      "profileRef": "workshop-profile://company-01/emp-c"
+    }
+  ]
+}

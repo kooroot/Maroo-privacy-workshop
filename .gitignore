@@ -1,4 +1,4 @@
-# 비밀정보 (과제 L169-170, L575, L700)
+# 비밀정보
 .env
 .env.*
 !.env.example
@@ -6,23 +6,22 @@
 *.pem
 keyring-*/
 
-# 의존성·빌드 (bun: node_modules/, forge: out/ cache/)
+# 의존성·빌드
 node_modules/
 dist/
 tmp/
 out/
 cache/
-# 주의: demo/broadcast/ (forge script --broadcast 의 tx 기록) 는 증거라서 무시하지 않는다. bun.lock 도 커밋한다.
+*.log
+# bun.lock은 커밋한다.
 
-# Clairveil ZK 아티팩트·로컬넷 상태 (수백 MB, dev-only setup — 커밋 금지)
-artifacts/
-.clairveil*/
-init-out/
-*_r1cs.bin
-*_pk.bin
-*_vk.bin
+# 실행 중 생성되는 제출 전 작업물
+evidence/archive/
+evidence/run/
+evidence/simulation/
 
 # OS
 .DS_Store
 
-# 주의: *.log 는 무시하지 않는다. 실행 로그가 증거(L201).
+# 내부 작업 기록
+GATES.md

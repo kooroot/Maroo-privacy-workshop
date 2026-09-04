@@ -1,0 +1,152 @@
+{
+  "schema": "maroo-workshop/local-payroll-evidence@5",
+  "label": "[Local]",
+  "utc": "2026-09-04T04:23:36.813Z",
+  "clairveilCommit": "ca85b02708fdd75259d4d2ee2d671c21198cec69",
+  "workflow": "clairveil-distinct-employee-one-proof-batch",
+  "asset": "uclair",
+  "payrollItemCount": 3,
+  "payrollAllocations": [
+    {
+      "employeeId": "EMP-A",
+      "amount": "100uclair"
+    },
+    {
+      "employeeId": "EMP-B",
+      "amount": "120uclair"
+    },
+    {
+      "employeeId": "EMP-C",
+      "amount": "80uclair"
+    }
+  ],
+  "payrollTotal": "300uclair",
+  "distinctRecipientCount": 3,
+  "proofCount": 1,
+  "transactionEnvelopeCount": 1,
+  "transactions": {
+    "deposit": {
+      "txHash": "0CFF463CF45EC232B7C0981E601EE3E06179EAFD630BF0C0F1B979C8FE2208F0",
+      "height": "2",
+      "code": 0,
+      "amount": "300uclair"
+    },
+    "payrollBatch": {
+      "txHash": "9B06A24FA020E649040EBE57EFADE2F5FF4A76A155903B4DDAA90C54695E06C8",
+      "height": "5",
+      "code": 0,
+      "payloadHash": "740f7637197ba0b66c5db83b69fee10cc22ae5b41bb87e44082eaab0ab489afc",
+      "proofArtifactDigest": "sha256:b74ceda8b8d45657a9c7617c40984061a72ad024ac6b4face9ca8aefed88aec3",
+      "inputCount": 1,
+      "outputCount": 3
+    }
+  },
+  "employeeScans": [
+    {
+      "employeeId": "EMP-A",
+      "profile": "employee-a",
+      "recipientAddressDigest": "sha256:536dc8b9f5977257df3a4eb839310922c396bfcad91e39de498bbed2301459df",
+      "beforeNoteCount": 0,
+      "afterNoteCount": 1,
+      "newNoteCount": 1,
+      "matchingBatchNoteCount": 1,
+      "receivedAmount": "100uclair"
+    },
+    {
+      "employeeId": "EMP-B",
+      "profile": "employee-b",
+      "recipientAddressDigest": "sha256:efd47a562e20cd68958be9bb62b2804cc6b50ec0ed6b8a2e017e3ef354b2b251",
+      "beforeNoteCount": 0,
+      "afterNoteCount": 1,
+      "newNoteCount": 1,
+      "matchingBatchNoteCount": 1,
+      "receivedAmount": "120uclair"
+    },
+    {
+      "employeeId": "EMP-C",
+      "profile": "employee-c",
+      "recipientAddressDigest": "sha256:5a4c20309a9c4e40f685fa2344c47c3a01b8f1144ca93f54c468bd3948c04286",
+      "beforeNoteCount": 0,
+      "afterNoteCount": 1,
+      "newNoteCount": 1,
+      "matchingBatchNoteCount": 1,
+      "receivedAmount": "80uclair"
+    }
+  ],
+  "observationComparison": {
+    "publicObserver": {
+      "txHash": "9B06A24FA020E649040EBE57EFADE2F5FF4A76A155903B4DDAA90C54695E06C8",
+      "height": "5",
+      "eventType": "batch_transfer",
+      "inputCount": 1,
+      "outputCount": 3,
+      "attributeNames": [
+        "audit_key_epoch",
+        "audit_key_id",
+        "audit_target_pubkey",
+        "circuit_set_id",
+        "commitment_root",
+        "effect_id",
+        "expires_at_unix",
+        "full_disclosure_root",
+        "input_count",
+        "msg_index",
+        "nullifier_root",
+        "output_count",
+        "payload_version",
+        "relayer",
+        "scan_schema_version",
+        "user_disclosure_root"
+      ],
+      "plaintextEmployeeIdsObserved": false,
+      "plaintextAmountsObserved": false
+    },
+    "employeeObservers": [
+      {
+        "employeeId": "EMP-A",
+        "receivedAmount": "100uclair",
+        "matchingBatchNoteCount": 1
+      },
+      {
+        "employeeId": "EMP-B",
+        "receivedAmount": "120uclair",
+        "matchingBatchNoteCount": 1
+      },
+      {
+        "employeeId": "EMP-C",
+        "receivedAmount": "80uclair",
+        "matchingBatchNoteCount": 1
+      }
+    ]
+  },
+  "failureControls": {
+    "overspend": {
+      "classification": "privacy-resource-rejection",
+      "availableAmount": "300uclair",
+      "requestedAmount": "301uclair",
+      "rejectedAt": "wallet-input-selection-before-proof",
+      "broadcastAttempted": false,
+      "error": "selected inputs do not fund batch payment total 301uclair",
+      "treasuryNoteCountBefore": 1,
+      "treasuryNoteCountAfter": 1,
+      "treasuryStateUnchanged": true
+    },
+    "wrongRecipient": {
+      "classification": "business-intent-failure",
+      "intendedEmployeeId": "EMP-B",
+      "actualRecipientEmployeeId": "EMP-C",
+      "amount": "120uclair",
+      "setupDepositTxHash": "3C8D184746CF4B7E8365DCFE8C5EBA28C9A600573F1E0032521D167312C829A2",
+      "transferTxHash": "F5DDB7C755C4CBA2EBECDA66404FC059DF9DF70C1881B871F164DF8BDCD7E829",
+      "transferCode": 0,
+      "intendedEmployeeNewNoteCount": 0,
+      "actualRecipientNewNoteCount": 1,
+      "actualRecipientMatchingNoteCount": 1,
+      "chainOutcome": "success",
+      "payrollOutcome": "failed"
+    }
+  },
+  "finalPayrollStatus": "Confirmed",
+  "stateChangingTransaction": true,
+  "boundary": "Actual Clairveil x/privacy local-chain 300uclair deposit and one-proof BatchJoinSplit16x32 payroll allocating EMP-A/B/C 100/120/80uclair, plus an overspend rejection and a successful-but-misdirected synthetic payment control. This is uclair/Cosmos localnet without Maroo OKRW, EVM ABI, or PCL enforcement."
+}

@@ -1,0 +1,109 @@
+{
+  "schema": "maroo-workshop/live-state-change-attempt@1",
+  "label": "[Live Testnet]",
+  "utc": "2026-09-04T01:08:49.727Z",
+  "completedUtc": "2026-09-04T01:08:54.927Z",
+  "kind": "privacy-deposit-transfer-probes",
+  "outcome": "probe-sequence-complete",
+  "stage": "probe-sequence-complete",
+  "stateChangingTransactionAttempted": true,
+  "assignmentAttemptCandidate": true,
+  "reproductionCommand": "bun run demo/scripts/run.ts --target maroo-testnet --action attempt --kind privacy-deposit-transfer-probes --env demo/.env --broadcast --ack-state-change MAROO_TESTNET_ONLY --out evidence/live-testnet/state-change-attempt.json",
+  "environment": {
+    "os": "darwin 25.6.0",
+    "arch": "arm64",
+    "bun": "1.4.0",
+    "packages": {
+      "@maroo-chain/viem": "0.3.0",
+      "viem": "2.56.3"
+    },
+    "chainId": 450815,
+    "rpc": "https://rpc-testnet.maroo.io",
+    "companyAccount": "0xa4A004C5A40A3Ad7a7e79AAA2a44dAD721c8c0dE",
+    "employeeAccount": "0xE219Ce7b684B96303d3CbC092fEFa1841CfF0161",
+    "sdk": "@maroo-chain/viem@0.3.0"
+  },
+  "boundary": "Two intentionally invalid but ABI-valid calls were sent to the Maroo IPrivacy precompile. They demonstrate live deposit/transfer rejection paths, not valid ZK proof generation, private deposit success, or employee delivery.",
+  "probes": {
+    "deposit": {
+      "schema": "maroo-workshop/live-state-change-attempt@1",
+      "label": "[Live Testnet]",
+      "utc": "2026-09-04T01:08:49.727Z",
+      "completedUtc": "2026-09-04T01:08:53.149Z",
+      "kind": "privacy-deposit-probe",
+      "outcome": "included-revert",
+      "stage": "receipt-collected",
+      "stateChangingTransactionAttempted": true,
+      "assignmentAttemptCandidate": true,
+      "reproductionCommand": "bun run demo/scripts/run.ts --target maroo-testnet --action attempt --kind privacy-deposit-transfer-probes --env demo/.env --broadcast --ack-state-change MAROO_TESTNET_ONLY --out evidence/live-testnet/state-change-attempt.json",
+      "environment": {
+        "os": "darwin 25.6.0",
+        "arch": "arm64",
+        "bun": "1.4.0",
+        "packages": {
+          "@maroo-chain/viem": "0.3.0",
+          "viem": "2.56.3"
+        },
+        "chainId": 450815,
+        "rpc": "https://rpc-testnet.maroo.io",
+        "companyAccount": "0xa4A004C5A40A3Ad7a7e79AAA2a44dAD721c8c0dE",
+        "employeeAccount": "0xE219Ce7b684B96303d3CbC092fEFa1841CfF0161",
+        "sdk": "@maroo-chain/viem@0.3.0"
+      },
+      "probe": {
+        "operation": "deposit",
+        "target": "0x100000000000000000000000000000000000000b",
+        "selector": "0xe6eb7771",
+        "valueWei": "1",
+        "gasLimit": "1000000",
+        "expectedResult": "rejection",
+        "invalidInput": "all-zero placeholder commitment, encrypted note, and proof; no success claim"
+      },
+      "txHash": "0xaa36463028962fccb246897d45bf13e43f6ef3da3cb6522fe4d3bdc82bd2c939",
+      "explorerUrl": "https://explorer-testnet.maroo.io/tx/0xaa36463028962fccb246897d45bf13e43f6ef3da3cb6522fe4d3bdc82bd2c939",
+      "receiptStatus": "reverted",
+      "blockNumber": "17243931",
+      "gasUsed": "536813"
+    },
+    "transfer": {
+      "schema": "maroo-workshop/live-state-change-attempt@1",
+      "label": "[Live Testnet]",
+      "utc": "2026-09-04T01:08:53.150Z",
+      "completedUtc": "2026-09-04T01:08:54.927Z",
+      "kind": "privacy-transfer-probe",
+      "outcome": "included-revert",
+      "stage": "receipt-collected",
+      "stateChangingTransactionAttempted": true,
+      "assignmentAttemptCandidate": true,
+      "reproductionCommand": "bun run demo/scripts/run.ts --target maroo-testnet --action attempt --kind privacy-deposit-transfer-probes --env demo/.env --broadcast --ack-state-change MAROO_TESTNET_ONLY --out evidence/live-testnet/state-change-attempt.json",
+      "environment": {
+        "os": "darwin 25.6.0",
+        "arch": "arm64",
+        "bun": "1.4.0",
+        "packages": {
+          "@maroo-chain/viem": "0.3.0",
+          "viem": "2.56.3"
+        },
+        "chainId": 450815,
+        "rpc": "https://rpc-testnet.maroo.io",
+        "companyAccount": "0xa4A004C5A40A3Ad7a7e79AAA2a44dAD721c8c0dE",
+        "employeeAccount": "0xE219Ce7b684B96303d3CbC092fEFa1841CfF0161",
+        "sdk": "@maroo-chain/viem@0.3.0"
+      },
+      "probe": {
+        "operation": "transfer",
+        "target": "0x100000000000000000000000000000000000000b",
+        "selector": "0x43fd6967",
+        "valueWei": "0",
+        "gasLimit": "1000000",
+        "expectedResult": "rejection",
+        "invalidInput": "all-zero placeholder root, nullifier, commitments, ciphertext, and proof; no success claim"
+      },
+      "txHash": "0x3d3d6bbba494127e776a7014acbdc3e087b680a0190b642baf21bbdc87efb622",
+      "explorerUrl": "https://explorer-testnet.maroo.io/tx/0x3d3d6bbba494127e776a7014acbdc3e087b680a0190b642baf21bbdc87efb622",
+      "receiptStatus": "reverted",
+      "blockNumber": "17243934",
+      "gasUsed": "1000000"
+    }
+  }
+}

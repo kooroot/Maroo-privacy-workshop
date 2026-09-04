@@ -1,143 +1,155 @@
-# 아키텍처 — OKRW → PCL → Privacy 한 호출의 흐름, 신뢰 경계, FAQ
+# 아키텍처 — deposit과 3-output payroll
 
-이 문서는 워크숍 Step 3(`IPrivacy.deposit`)에서 **한 트랜잭션 안에서 세 primitive 가 어떻게 이어지는지**를 그림과 표로 설명한다. 주소·selector·오류 문자열의 정본은 [`testnet-reference.md`](testnet-reference.md) 이고, 여기서는 그 값을 인용만 한다.
+이 워크숍은 연결·조회·지급 전체를 “한 트랜잭션”이라고 부르지 않는다. 상태 변경은 두 건이다.
 
-- 출처 규칙: 문장 단위로 docs.maroo.io (2026-09-02 WebFetch, `/en/`) 를 인용하면 `[Docs Only]`, 테스트넷 읽기 전용 호출로 확인한 것은 `[Live Testnet]`, Clairveil HEAD `ca85b02` 의 파일:라인은 `[Local]`. Clairveil 은 **기반 프라이버시 모듈의 구현 참고 자료**일 뿐이고 Maroo 의 외부 인터페이스는 docs 가 정본이다(과제 L135-140).
-- 라벨은 과제 L158 의 네 가지만 쓴다.
-- 약어: **가이드** = `../../maroo-exploration-guide.md`, **리뷰** = `../../review-skeleton-and-track2.md`, **Clairveil** = `../../clairveil/` (`git rev-parse HEAD` = `ca85b02708fdd75259d4d2ee2d671c21198cec69`, origin `https://github.com/DELIGHT-LABS/clairveil.git`, Apache-2.0 + NOTICE).
+1. 회사가 `deposit(request)`에 300 OKRW 상당의 `msg.value`를 붙여 treasury privacy note를 만든다.
+2. 그 note를 소비하는 `singleProofBatchTransfer(request)`가 EMP-A/B/C용 output 3개를 만든다.
 
----
+Maroo 외부 ABI는 Docs와 `@maroo-chain/contracts@0.0.8/precompiles/privacy/IPrivacy.sol`을 기준으로 한다. Clairveil은 privacy 구현·운영 참고이며 Maroo ABI 호환 근거가 아니다.
 
-## 1. 한 호출 흐름: `IPrivacy.deposit` 이 OKRW·PCL·Privacy 를 잇는다
+## 0. Maroo 정본과 구현 참고 실행
 
-### 1.1 왜 이 호출인가
+`demo/shared`는 급여 plan, prepared transaction, receipt, scan, audit evidence 계약만 소유한다. Maroo가 정본이고, Clairveil은 실제 `x/privacy`의 proof·note·scanner 경계를 참가자가 직접 확인하는 구현 참고다.
 
-- 과제가 요구하는 "OKRW, PCL, Privacy 가 연결되는 흐름"(과제 L339)을 **한 tx** 로 만드는 문서상 유일한 경로다(가이드 §1 REQ-FLOW).
-- OKRW 는 `msg.value` 로 들어간다: "The deposit amount is derived from `msg.value` under the runtime native denom" (docs `concepts/privacy/privacy-precompile-overview`) `[Docs Only]`. 실측 denom 은 `atokrw` (D-1) `[Live Testnet]`.
-- PCL 은 프리컴파일을 감싼 래퍼가 부른다: "The chain wraps the executor in a policy-aware precompile that owns the native-action snapshot and drives the full PCL contract-policy lifecycle for every mutating call." (docs `concepts/privacy/privacy-policy-aware-precompile`) `[Docs Only]`.
-- `0x…0b` 에는 이미 정책이 걸려 있다: `contractPolicies(0x…0b)` = `EAS_POLICY`(schemaUid `0x3e448d93…527d`) + `DENYLIST_POLICY`(빈 목록), admin = `policyAdmin` (`testnet-reference.md` §6.2) `[Live Testnet]`.
+| 경로 | 책임 | evidence |
+|---|---|---|
+| `maroo-testnet` | Maroo public RPC doctor/preflight, bundle estimate·명시적 broadcast, receipt/event 검증 | `evidence/live-testnet/` |
+| `clairveil-local` | 실제 정상 payroll·공개/직원 관찰·overspend 거부·성공한 오지급 | `evidence/local/` `[Local]` |
+| offline rehearsal | chain 없이 plan·receipt·scan·audit JSON 대사와 negative control | `evidence/simulation/` `[Simulation]` |
 
-### 1.2 시퀀스 다이어그램
+`demo/scripts/run.ts`는 Maroo/Clairveil adapter의 `--target`을 필수로 받고 선택한 adapter 한 개만 호출한다. Maroo 오류를 잡아 Clairveil을 실행하는 자동 fallback은 없고 runtime과 성공 주장을 합치지 않는다.
 
-라벨 규칙: 화살표 뒤 `[Docs Only]` = docs 문장, `[Live Testnet]` = 2026-09-02 07:5x UTC(및 08:2x UTC 재실측) `eth_call` 재생·receipt 로 확인, `[Local]` = Clairveil 구현 참고(Maroo 바이너리가 같다는 근거는 없음).
+제출용 `attempt` action은 또 다른 실행 target이 아니라 `maroo-testnet` adapter의 명시적 broadcast 경계다. `privacy-bundle`은 검증된 deposit bundle만 받는다. `privacy-deposit-transfer-probes`는 ABI-valid하지만 무효인 ZK 입력으로 실제 IPrivacy deposit/transfer 거부 경로를 관찰하며, 유효 proof·Privacy/PCL/payroll 성공 상태로 전이시키지 않는다.
+
+### 0.1 개발 도구 경계
+
+워크숍은 1인 1환경의 재현성을 위해 Bun·Go·Git과 Foundry `anvil`·`cast`·`forge` 설치를 시작 단계에서 확인한다. 이는 별도 EVM 기초 교육이나 범용 local EVM 상태 전이 실습이 아니다. 실제 상태 전이 실습은 Clairveil `x/privacy` localnet에서 하고, Maroo 구간에서는 `cast`를 public state·receipt 교차 확인에 사용한다. `check-workshop-environment.ts`는 도구와 고정 source만 검사하며 secret을 읽거나 node를 시작하지 않는다.
+
+## 1. 상태 전이
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as 사용자 EOA
-    participant A as AnteHandler (노드)
-    participant W as 정책 인지 래퍼<br/>IPrivacy 0x…0b
-    participant P as IPcl 0x…05
-    participant I as EAS Indexer 0x…08 / EAS 0x…07
-    participant X as Privacy 실행기<br/>(노트 트리·에스크로)
+    participant C as Company EOA
+    participant P as PCL
+    participant X as IPrivacy 0x…0b
+    participant W as Wallet / Prover
+    participant E as EMP-A/B/C Scanners
+    participant A as Auditor
 
-    U->>A: tx: deposit((noteCommitment, encryptedNote, proof)), msg.value = N atokrw [Live Testnet] selector 0xe6eb7771
-    A->>A: 서명 → 논스 → 수수료 → 가스 → PCL 전역 정책(GlobalPolicyConfig) [Docs Only]
-    Note over A: 전역 정책 실패 시 "the EVM never executes" [Docs Only]
-    A->>W: EVM CALL (value = N)
-    W->>W: Prepare: 입력 검증 [Live Testnet] commitment≠0 → proof 존재 → envelope 20B 헤더
-    W->>W: PolicyOperation 정확히 1개 생성<br/>(effectiveSender = operator = msg.sender, value) [Docs Only]
-    W->>P: EvaluatePolicyBeforeExecution(op) → contractPolicies(0x…0b) [Docs Only] + [Live Testnet] EAS_POLICY + DENYLIST_POLICY
-    P->>I: sender 의 schemaUid attestation 조회 [Docs Only]
-    I-->>P: 결과
-    alt attestation 없음 (KYC 미완료)
-        P-->>W: 거부
-        W-->>U: revert [Live Testnet] Error(string) "no EAS attestation received for sender (index returned empty): maroo1…"<br/>[Docs Only] 문서는 typed EasNoAttestationReceived(sender) (D-12)
-    else attestation 유효
-        P-->>W: 통과
-        W->>X: ExecutePrepared: proof 검증 → 노트 커밋 → value 에스크로 [Docs Only]<br/>[Live Testnet] commitment 중복 검사가 proof 검증보다 먼저("note commitment already exists"), 금액 불일치 시 "deposit proof verification failed … pairing doesn't match", value 0 도 성공(D-13) — testnet-reference §4.3<br/>[Local] deposit.go:87 verifyProofBN254 → :97 SendCoinsFromAccountToModule
-        W->>P: EvaluatePolicyAfterExecution(op) → RecordPolicyAfterExecution(op) [Docs Only]
-        W-->>U: PrivacyDeposit(effectiveSender, operator, "N atokrw", noteCommitment) [Live Testnet] topic0 0xe94fdc79…87c2, receipt status 0x1
-    end
+    C->>P: global/contract policy와 sender 조건 조회
+    C->>W: 300 OKRW deposit note 준비
+    C->>X: deposit(request), msg.value=300
+    X->>P: policy-aware execution lifecycle
+    X-->>C: PrivacyDeposit receipt/event
+    W->>W: treasury note scan, root/nullifier 준비
+    W->>W: 3 outputs + audit disclosure + one proof
+    C->>X: singleProofBatchTransfer(request)
+    X->>P: policy-aware execution lifecycle
+    X-->>C: PrivacySingleProofBatchTransfer(inputCount, outputCount=3)
+    E->>E: 각 profile로 decrypt + commitment 재계산
+    A->>A: audit payload decrypt + digest/total 재계산
 ```
 
-문장 근거(전부 2026-09-02 WebFetch 원문):
+`IPrivacy`의 policy-aware wrapper는 입력 준비, 실행 전 정책 평가, 실행, 실행 후 평가·기록의 생명주기를 가진다([Privacy policy-aware precompile](https://docs.maroo.io/concepts/privacy/privacy-policy-aware-precompile)) `[Docs Only]`. 전역 정책은 EVM 실행 전에도 평가될 수 있으므로([PCL policy enforcement](https://docs.maroo.io/concepts/compliance/pcl-policy-enforcement)) 거부의 첫 계층을 raw revert data로 구분해야 한다.
 
-| 단계 | 인용 | 페이지 | 라벨 |
+## 2. 온체인 계약
+
+| 호출 | 자산/상태 | 공개 관측 | 워크숍 판정 |
 |---|---|---|---|
-| 2 | "Signature verification … Nonce check … Fee deduction … Gas limit validation … PCL evaluation: every active GlobalPolicyConfig PolicySet is evaluated against the tx (denylists, KYC, volume, period)." | `concepts/network/maroo-transaction-lifecycle` | `[Docs Only]` |
-| 2 | "Any single failure aborts the transaction with the corresponding ReasonCode; the EVM never executes." / "only global is evaluated for other calls" | `concepts/compliance/pcl-policy-enforcement` | `[Docs Only]` |
-| 5 | 입력 검증 문자열 3종과 순서 | `testnet-reference.md` §4.3 | `[Live Testnet]` |
-| 6 | "Each call must produce exactly one contract-scoped `PolicyOperation` describing the effective sender, recipient, asset, and value." / "Deposits require the operator (`msg.sender`) to be the effective sender" | `privacy-policy-aware-precompile`, `privacy-precompile-overview` | `[Docs Only]` |
-| 6–11 | "Prepare … EvaluatePolicyBeforeExecution(op) … ExecutePrepared(...) … EvaluatePolicyAfterExecution(op) … RecordPolicyAfterExecution(op)" | `privacy-policy-aware-precompile` | `[Docs Only]` |
-| 7 | `contractPolicies(0x…0b)` 응답, `pclProxy(0x…0b)` = 0 (프록시가 아니라 래퍼 경로) | `testnet-reference.md` §6.2 | `[Live Testnet]` |
-| 8 | "Looks up attestations issued to `sender` under `schemaUid` via the EAS Indexer" / 실패 순서 `EasNoAttestationReceived → EasAttestationRevoked → EasAttestationExpired → EasAttestationLookupFailed → EasAttestationRequired` / "Once a fresh attestation lands on-chain, the same transaction succeeds." | `concepts/compliance/pcl-template-eas-policy` | `[Docs Only]` |
-| 10 | "Anything PCL rejects surfaces as a typed PCL ReasonCode ABI-encoded into the revert data" / "Non-PCL failures (invalid proof, spent nullifier, insufficient tree capacity) surface as plain string reverts from the executor." vs 실측: PCL(EAS_POLICY) 거부도 `Error(string)` 으로 옴 — 불일치는 EAS 거부의 revert 형태에 한정되며, proof·중복 오류가 string 인 것은 docs 와 일치 | `privacy-policy-aware-precompile`; `testnet-reference.md` §6.4 | `[Docs Only]` vs `[Live Testnet]` (D-12) |
-| 12 | Clairveil `x/privacy/keeper/deposit.go:87` `verifyProofBN254(...)` 뒤 `:97` `SendCoinsFromAccountToModule` — 증명 먼저, 잠금 나중 (가이드 §5.4-② 는 `docs/clairveil-circuits.md:L74` 가 반대로 씀) | Clairveil | `[Local]` |
-| 14 | receipt `logs[0]` topic0 = `keccak("PrivacyDeposit(address,address,string,bytes)")`, `amount` = `"10000000000000000000atokrw"` | `testnet-reference.md` §5 | `[Live Testnet]` |
+| `deposit((bytes,bytes,bytes))` | `msg.value`가 privacy escrow/note로 전환 | sender/operator, amount, note commitment event | status `0x1`, exact calldata/value, `PrivacyDeposit` |
+| `singleProofBatchTransfer(...)` | treasury note nullifier 소비, output commitments 3개 | root, input/output count, request hash event | status `0x1`, exact calldata, outputCount 3 |
 
-### 1.3 이 그림에서 자주 틀리는 것
+Docs는 deposit request를 `noteCommitment`, `encryptedNote`, `proof`로 정의하고 amount를 `msg.value`에서 취한다([Privacy deposit](https://docs.maroo.io/apis/contract/contract-privacy-deposit)) `[Docs Only]`.
 
-- `runOnPcl` 같은 명시 호출은 없다: "with no explicit runOnPcl entrypoint" (docs privacy-policy-aware-precompile) `[Docs Only]` (D-6).
-- `msg.value` 는 docs 상 필수(`privacy deposit value is required`, contract-privacy-deposit)지만 라이브에서는 value 0 deposit 이 성공했다: tx `0x83a1289ef6498763f838a8d07ae6690668b488f2ba633129b29acc1e78935aaa` (2026-09-02T07:58:22Z, `status 0x1`, `PrivacyDeposit.amount "0atokrw"`) `[Live Testnet]` (D-13, `testnet-reference.md` §4.2·§6.4). 그림의 "value = N" 에서 N = 0 도 통과하므로 Step 3 의 "`msg.value` 필수" 전제는 재검토 대상이다. OKRW 가 실제로 잠기려면 value 가 있어야 한다는 점("The deposit amount is derived from `msg.value`") 은 그대로다.
-- 개발자가 **자기 컨트랙트**에 정책을 붙일 때만 `deployPclProxy → preCall/postCall` 을 쓴다: "The PCL proxy hook invokes `preCall` / `postCall` around every routed call so ContractPolicyConfig can be enforced without the underlying logic contract knowing about compliance." (docs `apis/contract/contract-pcl-deploy-pcl-proxy`) `[Docs Only]`. `0x…0b` 는 프록시가 아니므로(`pclProxy` = 0 `[Live Testnet]`) 이 경로가 아니라 래퍼 경로다.
-- `preCall` 을 직접 부르면 `Unauthorized()` `0x82b42900` `[Live Testnet]` — "왜 프록시/래퍼를 거쳐야 하나"의 시연(가이드 C6).
-- 전역 정책은 PolicyAdmin 만 바꾼다: "Only the admin can invoke … `setGlobalPolicies(GlobalPolicyConfig newConfig)`" (docs `concepts/compliance/pcl-policy-admin`) `[Docs Only]`; 실측 admin `0x58eC1E71…804F` `[Live Testnet]`.
-- 성공 여부는 receipt·이벤트로만 본다: "The interface exposes the following mutating methods and no view methods" (docs privacy-precompile-overview) `[Docs Only]`; Cosmos REST 도 노출되지 않는다(`testnet-reference.md` §1) `[Live Testnet]`.
+batch request는 다음 필드를 가진다([single-proof batch transfer](https://docs.maroo.io/apis/contract/contract-privacy-single-proof-batch-transfer)) `[Docs Only]`.
 
----
+- proof, root, nullifiers.
+- 여러 `PrivacySingleProofBatchTransferOutput`.
+- audit key ID/epoch와 audit target public key.
+- `expiresAtUnix`.
 
-## 2. 신뢰 경계
+워크숍은 하나 이상의 input과 정확히 3개의 active output을 요구한다. EMP-A/B/C의 amount/profile 바인딩은 off-chain plan과 scanner report로 대사한다. event의 output count만으로 수신자를 식별하지 않는다.
 
-각 행: 어디서 실행되는가 / Maroo docs 근거 / Clairveil 구현 참고(path:line) / 라벨. **Clairveil 열은 "Maroo 가 이렇게 동작한다"는 근거가 아니다** — Maroo 의 래퍼·PCL 코드는 비공개이고 Clairveil 에는 PCL/PolicyOperation 코드가 0건이다(가이드 §5.3-①).
+## 3. PCL이 실제로 개입했다고 말하는 조건
 
-### 2.1 온체인 (프리컴파일 · 정책 · 검증)
+| 확인 | 이유 |
+|---|---|
+| 실행 직전 global/contract policy raw state | 어떤 정책이 적용됐는지 시점 고정 |
+| principal과 company sender 일치 | 다른 계정의 attestation을 근거로 삼지 않음 |
+| typed PCL reason vs `Error(string)` 분리 | Privacy 입력 실패를 정책 거부로 오인하지 않음 |
+| success receipt + policy 전제 + Privacy event | 단순 read를 enforcement 성공으로 부르지 않음 |
 
-| 구성요소 | 누가 · 어디서 | Maroo docs 근거 | Clairveil 구현 참고 | 라벨 |
-|---|---|---|---|---|
-| `IPrivacy` 진입점 `0x…0b`, `msg.value` 에스크로 | 노드 안 프리컴파일. `eth_getCode` 는 `0x` 지만 호출됨 | privacy-precompile-overview: `deposit` 만 payable, "There is no `depositWithAuthorization`" | `plans/clairveil-deposit-funder-separation-handoff-kr.md:44` "operator → EVM CALL msg.value → Privacy precompile escrow"; `docs/clairveil-downstream-cosmos-integration-guide.md:200-214` `DepositWithFunder` 가 지켜야 할 불변식(`msg.Creator` 는 인증된 EVM caller 에서 유도, 고정 escrow 만 funder, `MsgDeposit.Amount == msg.value`, 외부 롤백 경계) | `[Docs Only]` + `[Live Testnet]`(호출 응답) / `[Local]` |
-| 전역 정책 평가 | AnteHandler, EVM 실행 전 | maroo-transaction-lifecycle, pcl-policy-enforcement ("The AnteHandler decodes the transaction, resolves its sender and … the target contract and calldata, and iterates every PolicySet in the current GlobalPolicyConfig.") | 대응 코드 없음 (`grep -rniE "okrw\|\bPCL\b\|PolicyOperation"` 0건, 가이드 §3.1-4) | `[Docs Only]`; 전역 정책 내용은 `[Live Testnet]` (`globalPolicies()`) |
-| 컨트랙트 범위 정책 평가 | `0x…0b`: 정책 인지 래퍼 / 일반 컨트랙트: PCL 프록시 `preCall/postCall` | privacy-policy-aware-precompile 5단계; pcl-policy-enforcement "Both are evaluated when the target is a PCL-wrapped proxy" | 대응 코드 없음 (Maroo 바이너리, `Hashed-Open-Finance/maroo` 404 — 가이드 §5.3-①) | `[Docs Only]` + `[Live Testnet]` (`contractPolicies`, EAS 거부 문자열) |
-| EAS attestation 조회 | Indexer `0x…08` → EAS `0x…07` (SchemaRegistry `0x…06`) | pcl-template-eas-policy; eas-precompile-overview ("resolve … via `IEas.getParams()`") | 없음 (`x/` 에 `privacy` 뿐) | `[Live Testnet]` (주소·바인딩) / `[Docs Only]` (조회 의미) |
-| ZK 증명 검증 (deposit) | 래퍼 실행 단계, PCL 통과 뒤 | contract-privacy-deposit: struct 에 `bytes proof` | `x/privacy/keeper/deposit.go:87-89` `verifyProofBN254` + 오류 "deposit proof verification failed; the proof, amount, asset, or commitment may not match" (실측 문자열과 **동일**); `x/privacy/zk/proof.go:13-30` 164바이트 압축 프레이밍; `docs/clairveil-circuits.md:302-311` 검증당 1,000,000 gas 선차감 | `[Live Testnet]` (문자열·순서) / `[Local]` |
-| 노트 트리 · commitment 중복 · reserve | 실행 단계 | docs 에 view 없음 → receipt/이벤트만 | `x/privacy/types/keys.go:46-50` 이벤트 타입 `deposit/withdraw/shielded_transfer/batch_transfer`; `x/privacy/keeper/reserve.go:39-66` reserve invariant (가이드 §3.3-7) | `[Live Testnet]` ("note commitment already exists") / `[Local]` |
-| 정책 관리자 | `policyAdmin()` (전역), 각 `ContractPolicyConfig.admin` (컨트랙트) | pcl-policy-admin: "contract-scoped policies … are gated by the per-config `admin` field" | 없음 | `[Live Testnet]` (`0x58eC…804F`, `0x…0b` 의 admin 도 같은 주소) |
+PCL custom error 예시는 [testnet reference](testnet-reference.md#pcl-reasons)에 있고, 실제 체인에 적용된 template은 preflight 결과로만 말한다. PCL lifecycle을 통과했다는 사실은 조직의 employee ID와 shielded output이 올바르게 연결됐다는 뜻이 아니다.
 
-### 2.2 오프체인 (증명 생성 · 노트 암호화 · 키 보관 · 서명)
+### 3.1 실패 계층과 주소 착오 통제
 
-| 구성요소 | 누가 · 어디서 | Maroo docs 근거 | Clairveil 구현 참고 | 라벨 |
-|---|---|---|---|---|
-| 증명 생성 (prover) | 사용자 측. docs 는 "client-side prover" `buildDepositWitness` 를 언급하나 정의·링크 없음 (가이드 §2.2-3) | contract-privacy-deposit | `docs/clairveil-proverd-deposit-api.md:1-30` `POST /v1/prover/deposit` (receiver spend/view pubkey, amount, asset_id, randomness, note_commitment → proof_hex); `:60-70` "Selecting a remote prover is therefore a trusted-prover privacy decision"; 토폴로지 4종 `docs/clairveil-proverd-remote-production-profile.md:19-26` (브라우저 WASM prover 는 리포에 없음) | `[Docs Only]` / `[Local]`. **Maroo VK 와 Clairveil artifact 의 호환은 미검증** (가이드 §4 Phase E-1, `circuits.md:276` "development-only") → TODO(실측: 게이트 ⑥) |
-| 노트 암호화 (`encryptedNote`) | 사용자 측. prover 는 암호화하지 않음 | 실측: 20바이트 헤더의 "canonical deposit-note envelope" 요구 (`testnet-reference.md` §4.2) | `proverd-deposit-api.md:66-70` "The endpoint neither creates `MsgDeposit`, encrypts a note, nor signs or broadcasts" — 클라이언트가 NoteV1 구성 → 암호화 → proof 요청 | `[Live Testnet]` (형식 검사) / `[Local]` |
-| 키 보관 | 사용자/기관 지갑 | docs 키 관리 페이지: TODO(실측: docs.maroo.io 에 키 custody 서술 페이지가 있는지 WebFetch) | `docs/clairveil-client-risk-decisions.md:13-22` 민감 데이터 8행(root seed, spend key, view key, disclosure key, note cache, prepared proof, disclosure plaintext, prover bearer token)과 권장 정책 | `[Local]` |
-| 서명 · 승인 | EOA 서명(deposit) / EIP-712 `*WithAuthorization`(transfer·withdraw·batch, 릴레이) | privacy-authorization-eip712-domain (§3 FAQ 5) | Clairveil 에 EIP-712 0건(리뷰 §2.2 L65-66 행); 릴레이는 withdraw 전용 `prepare-withdraw`/`relay-withdraw` | `[Docs Only]` / `[Local]` |
-| prover 인증 토큰 | `PROVER_BEARER_TOKEN` (`demo/.env.example`) | — | `cmd/clairveil-proverd` env `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` 하나, 비면 무인증 (가이드 §3.4-3, §3.4-4) | `[Local]` |
+| 결과 | 판정 | 책임 |
+|---|---|---|
+| `300` note로 `301` output 준비가 실패하고 tx hash 없음 | Privacy client/resource rejection | wallet/prover preflight; 제출됐다면 Privacy proof 가치 보존 |
+| PCL typed selector로 revert | policy rejection | 활성 PCL policy와 EAS/denylist principal 수정 |
+| valid proof tx 성공, EMP-B scan 0, EMP-C scan 1 | business-intent failure | approved address registry + plan/output binding + post-receipt reconciliation |
 
-### 2.3 규제 관측 (감사 disclosure · 정책 · 공개 정보)
+Maroo `PrivacyTransferRequest`와 `PrivacySingleProofBatchTransferOutput`에는 공개 직원 EVM `recipient` 필드가 없다. 수취인은 proof·commitment·ciphertext가 결속하는 shielded profile이며, 숨겨진 transfer 금액은 PCL operation에서 `value=0`으로 모델링된다. 따라서 standard volume policy나 PCL 실행 자체를 employee-address 매핑 검증으로 사용하지 않는다. 별도 recipient identity 정책을 도입했다면 그 정책 설정과 typed rejection을 evidence로 남겨야 한다.
 
-| 구성요소 | 누가 · 어디서 | Maroo docs 근거 | Clairveil 구현 참고 | 라벨 |
-|---|---|---|---|---|
-| 감사 disclosure (필수) | transfer/batch 마다 마스터 감사 키로 암호화한 페이로드를 tx 필드로 첨부 | Maroo `transfer` struct 17필드 중 disclosure 필드 명세: TODO(실측: `apis/contract/contract-privacy-transfer` 원문에서 disclosure 필드명 확인) | `proto/clairveil/privacy/v1/tx.proto:87-90` `MsgTransfer` — 주석 "Mandatory master-auditor disclosure." (`:87`) 아래 `audit_disclosure_digest` / `audit_disclosure_target_pubkey` / `audit_disclosure_payload` (`:88-90`); batch 는 `MsgBatchTransfer` `:125` `audit_disclosure_target_pubkey` + `BatchTransferOutput` `:141-142` `full_disclosure_digest` / `audit_disclosure_payload` (digest 는 self-view disclosure 와 공유, 별도 audit digest 없음 — `:129-131` 주석); `x/privacy/keeper/grpc_query.go:263` `AuditDisclosureRequired: true` 하드코딩; 가이드 §3.3-2 `"chain audit master pubkey is not configured"` | `[Local]`. 파일(`disclosure.json`)이 아니라 **tx 필드**다(리뷰 §2.2 L39 행) |
-| 사용자 선택 disclosure | 발신자가 정책 비트로 공개 범위 선택 | TODO(실측: docs 에서 사용자 disclosure 정책 페이지 확인) | `x/privacy/types/msg.go:22-31` `0`=all-private, `1`=amount, `2`=to, `4`=from, 조합 `3/5/6/7`; mode NONE/PUBLIC/RECIPIENT_ENCRYPTED (`tx.proto`, 가이드 §3.3-1) | `[Local]` |
-| deposit 에서 공개되는 정보 | 누구나 (이벤트) | contract-privacy-deposit: `PrivacyDeposit` 의 `amount` 는 "Cosmos-coin-formatted value of `msg.value`" | — | `[Live Testnet]`: 표본 로그 `amount = "10000000000000000000atokrw"`, `effectiveSender`/`operator` 는 indexed topic — **deposit 금액과 입금자는 공개**, 익명성은 노트 이후부터 |
-| 컴플라이언스 정책 (PCL) | PolicyAdmin(전역) / 컨트랙트 admin | pcl-policy-admin, pcl-policy-enforcement | Clairveil 의 "policy" 는 disclosure 정책이고 PCL 엔진은 없음 (`docs/clairveil-reference-payroll-product-policy.md:1-60`, 가이드 §3.5-4) — 워크숍에서 "policy" 두 뜻을 구분 | `[Docs Only]` / `[Local]` |
-| KYC 발급 | kyc-testnet (카카오 본인인증) → EAS attestation, attester `0xBfa4…0aE3` | testnet-access "KYC (mock)" | — | `[Live Testnet]` (가이드 §2.4-4 인용) |
-| 관측 도구 | Blockscout(`/blockscout/api/v2`), `eth_getLogs`, receipt | testnet-access; `apis/rpc/get-logs` (가이드 §2.1-11) | Clairveil 로컬은 gRPC 쿼리 15개 (`proto/clairveil/privacy/v1/query.proto` 의 `rpc` 선언: CheckNullifier, CheckNullifiers, TreeState, CommitmentInfo, PrivacyEvents, ScanEvents, MerklePath, AuditConfig, DisclosureConfig, CircuitConfig, Reserve, AssetByDenom, AssetByID, PrivacyScan, CommitmentPathsAtRoot — 가이드 §3.3-5 의 "14개" 는 파일 원본과 다름) — Maroo 테스트넷엔 미노출 | `[Live Testnet]` / `[Local]` |
+## 4. 오프체인 신뢰 경계
 
-### 2.4 프로덕션 전에 결정해야 할 것 (과제 L342 "추가로 결정해야 할 사항")
+| 구성요소 | 보는 민감 데이터 | 반드시 검증할 것 |
+|---|---|---|
+| company wallet | spending key, treasury note, recipient profiles | chain/domain, approved payroll plan digest, address-registry version, root, nullifier, intent expiry |
+| prover | circuit에 따라 전체 witness와 직원별 amount/address | Maroo VK/circuit 호환, approved plan/output binding, artifact provenance, 로그·보존 정책 |
+| employee scanner | 해당 profile의 viewing material와 decrypt note | cursor, view tag fallback, commitment 재계산, 중복 제거 |
+| auditor | audit private key와 disclosure plaintext | key ID/epoch, digest, total, 승인·접근 로그 |
+| evidence collector | 공개 bundle digest, receipt, redacted reports | plan/employee/address digest/output/tx/commitment 바인딩, secret 미포함 |
 
-출처 있는 항목만:
-1. prover 토폴로지와 인증 — `docs/clairveil-proverd-remote-production-profile.md:19-26` 표 4행 `[Local]`; Maroo docs 는 prover 를 지정하지 않음 `[Docs Only]`.
-2. 회로 artifact 의 신뢰 설정·배포 — `docs/clairveil-circuits.md:276` "development-only … no formal trusted setup" `[Local]`; Maroo VK 출처 미공개 → TODO(실측: docs·`@maroo-chain/contracts@0.0.8` 패키지(README.md 포함)에 VK/artifact 출처 문서가 있는지 확인).
-3. 감사 키 custody — `docs/clairveil-client-risk-decisions.md:13-22` `[Local]`; Maroo 측 감사 키 운영 주체 → TODO(실측: docs 에서 감사 키 운영 주체 서술 확인).
-4. KYC 스키마·attester 신뢰 — `0x…0b` 의 EAS_POLICY schemaUid 는 policyAdmin 이 정함 `[Live Testnet]`; 기관 자체 스키마를 쓰려면 자기 컨트랙트 + `deployPclProxy` 경로 (docs `guides/integration/tutorial-building-compliant-token`, 가이드 §2.3-11) `[Docs Only]`.
-5. 릴레이/EIP-712 사용 여부 — §3 FAQ 5.
+remote prover를 사용하면 TLS/token만의 문제가 아니다. witness가 서비스 경계를 넘는지, 저장/로그/운영자가 볼 수 있는지를 조직이 결정해야 한다. 이 저장소의 JSON contract는 데이터 연결을 검증할 뿐 prover와 scanner의 정직성을 대신하지 않는다.
 
----
+## 5. 가시성
 
-## 3. FAQ
+| 주체 | 알 수 있는 것 | 알 수 없어야 하는 것 |
+|---|---|---|
+| 일반 explorer 사용자 | company address, deposit 총액, tx/event metadata, batch shape | 직원 identity↔output, 직원별 amount plaintext |
+| EMP-A/B/C | 자기 viewing profile로 복구한 note | 다른 직원의 plaintext |
+| auditor | 승인된 audit disclosure 범위의 직원·금액·총액 | 범위 밖의 wallet secret |
+| PCL operator/admin | policy configuration와 평가 입력 | note plaintext 전체가 자동 공개되는 것은 아님 |
 
-**Q1. Clairveil 로컬넷에서는 왜 OKRW 와 PCL 이 안 보이나?**
-Clairveil 은 순수 Cosmos 체인이라 EVM·OKRW·PCL 이 없다. 근거: `ls x/` → `privacy` 하나 `[Local]`; `go.mod` 에 ethermint/evmos/go-ethereum 0건 `[Local]` (가이드 §3.1-4); `docs/clairveil-downstream-cosmos-integration-guide.md:13` "EVM, policy modules, precompiles, fee policy, and permission policy are implemented by the downstream chain." `[Local]`; 같은 문서 `:14` "The Clairveil reference daemon `clairveild` is a host for verifying that the module can run end-to-end by itself. It does not replace the downstream app." 그래서 로컬 대체 경로(`make privacy-e2e-smoke`)는 Privacy 코어만 검증하며 `[Local]`/`[Simulation]` 라벨을 붙인다(가이드 §1 REQ-LOCAL). 이 머신에는 아직 `~/.clairveil` 이 없어 실행 수치는 TODO(실측: `make init` → `make privacy-e2e-smoke`).
+deposit amount가 공개되는 것과 이후 직원별 배분이 private인 것은 모순이 아니다. 조직은 총액 노출도 감출 필요가 있는지 별도 요구사항으로 결정해야 한다.
 
-**Q2. 왜 Docs 와 Live 가 다른가? 어느 쪽을 믿나?**
-과제가 그 상황을 전제한다: "현재 Maroo 테스트넷과 정확히 대응하는 Clairveil 태그나 커밋은 고정돼 있지 않습니다"(과제 L135), "외부 호출 방식, 주소, ABI 와 API 는 **Maroo Docs** 를 기준"(L138), "차이를 숨기거나 추측으로 해결하지 않습니다"(L140). 그래서 Docs 를 인터페이스 정본으로 읽되 실행 결과가 다르면 D-n 으로 기록한다. 실측 예: denom `aokrw`→`atokrw` (D-1), deposit selector 변경 — 2026-08-26 구 selector tx 2건 revert, 현재 `0xe6eb7771` 만 동작 (D-3), PCL(EAS_POLICY) 거부가 typed ReasonCode 가 아니라 `Error(string)` 으로 옴 (D-12), docs 가 필수라고 쓴 `msg.value` 가 0 이어도 deposit 이 성공함 (D-13). 전부 `testnet-reference.md` §8 에 재현 명령이 있다 `[Live Testnet]`.
+## 6. 완료 상태 모델
 
-**Q3. Maroo 프리컴파일은 네 개인가 다섯 개인가?**
-docs `resources/contracts/deployed-contracts` 는 "These four precompile addresses are stable across testnet and mainnet." 라며 IOkrw `0x…01`, IPcl `0x…05`, IEas `0x…09`, IAgent `0x…0A` 만 적는다 `[Docs Only]`. 그러나 docs `concepts/privacy/privacy-precompile-overview` 는 `0x100000000000000000000000000000000000000b` 를 Privacy 프리컴파일 주소로 명시하고 `[Docs Only]`, 그 주소는 `deposit` 호출에 응답하고 `PrivacyDeposit` 이벤트를 낸다 `[Live Testnet]`. 즉 문서 페이지끼리 어긋나며(가이드 §5.2-⑤, D-4) 실제로는 다섯 주소가 동작한다. 다섯 주소 모두 `eth_getCode` 는 `0x` 다 — 코드 유무로 프리컴파일 존재를 판단하지 말 것(`testnet-reference.md` §2).
+```text
+Prepared
+  → DepositConfirmed
+  → PayrollConfirmed
+  → EmployeeDeliveryConfirmed (3/3)
+  → AuditVerified
+```
 
-**Q4. deposit 에 왜 proof 가 필요한가? 입금은 공개 금액 아닌가?**
-금액은 공개지만, proof 는 **commitment 가 그 금액·자산에 묶였다는 것**을 증명한다. docs `apis/contract/contract-privacy-deposit` 의 struct 는 `{bytes noteCommitment; bytes encryptedNote; bytes proof}` `[Docs Only]`; 실측에서 proof 를 비우면 `deposit proof is required`, 금액을 바꾸면 `deposit proof verification failed; the proof, amount, asset, or commitment may not match: pairing doesn't match` `[Live Testnet]`. Clairveil 도 같다: `proto/clairveil/privacy/v1/tx.proto:39` `bytes proof = 5; // commitment가 amount/asset에 묶였다는 ZK proof`, `docs/clairveil-js-sdk-handoff.md:64` "proof-less deposits are not part of the current contract" `[Local]`. 반대로 쓰인 `examples/clairveil-dapp/README.md:127` "Deposit does not need a ZK proof." 는 구 ABI 시절 문장이다(가이드 §5.4-③). 단, proof 는 **발신자를 묶지 않는다**: `docs/clairveil-downstream-cosmos-integration-guide.md:210` "the deposit proof also does not bind the creator" `[Local]`, 실측으로도 거부 tx `0x3839…` 의 calldata 를 attestation 있는 주소에서 `eth_call` 하면 성공(`0x…01`)한다 `[Live Testnet]` (`testnet-reference.md` §4.3-6). 그 의미(재사용·선점 가능성)는 프로덕션 전 결정사항으로 남긴다.
+- `DepositConfirmed`: 300 value와 `PrivacyDeposit` 확인.
+- `PayrollConfirmed`: batch receipt와 `outputCount=3` 확인.
+- `EmployeeDeliveryConfirmed`: 세 별도 scanner가 각 commitment를 소유한 것으로 재검증.
+- `AuditVerified`: audit digest, total, key epoch 검증.
 
-**Q5. EIP-712 도메인 `Maroo Privacy Precompile` v1 은 언제 쓰나?**
-`*WithAuthorization` 네 메서드(`transferWithAuthorization`, `withdrawWithAuthorization`, `batchTransferWithAuthorization`, `singleProofBatchTransferWithAuthorization`)에서, effectiveSender 가 오프체인에서 서명하고 "an executor submits it to the precompile, which recomputes the digest and verifies the recovered signer" 하는 **릴레이 경로**에만 쓴다. 도메인은 name `"Maroo Privacy Precompile"`, version `"1"`, chainId `450815`(mainnet `815`), verifyingContract `0x100000000000000000000000000000000000000b`; `authorizationKind` 1=EOA, 2=ERC1271, 3=EIP7702 (docs `concepts/privacy/privacy-authorization-eip712-domain`) `[Docs Only]`. deposit 에는 해당 경로가 없다: "There is no `depositWithAuthorization`. Deposits require the operator (`msg.sender`) to be the effective sender" (privacy-precompile-overview) `[Docs Only]`. 따라서 이 워크숍(Step 3 deposit)에서는 쓰지 않는다. 주의: `authorizationKind` 값이 페이지마다 다르다(가이드 §5.2-①), Clairveil 리포에는 EIP-712 가 없고 릴레이는 withdraw 전용이다(리뷰 §2.2). 도메인 서명을 실제로 검증한 기록은 없다 → TODO(실측: EIP-712 서명을 만들어 `transferWithAuthorization` 을 `eth_call` 로 검증).
+중간 상태를 건너뛰지 않는다. `PayrollConfirmed`인데 EMP-C scan이 실패한 경우 tx를 재전송하지 않고 delivery reconciliation을 수행한다.
+
+## 7. Clairveil 구현 참고 검증과의 차이
+
+| 항목 | 목표 Maroo live | Clairveil 참고 검증 |
+|---|---|---|
+| asset/runtime | OKRW + EVM | `uclair` + Cosmos SDK localnet |
+| compliance | PCL global/contract policy | PCL 없음 |
+| batch | `singleProofBatchTransfer`, one proof, 3 output | `BatchJoinSplit16x32`, one proof, 3 output |
+| recipients | EMP-A/B/C 별도 Maroo-compatible profile | EMP-A/B/C 별도 Clairveil local profile |
+| evidence | two receipts + 3 scans + audit | local receipts + public/employee observation + scans 3개 + overspend/misdirection controls |
+
+Clairveil 실행은 75분 안에서 실제 `x/privacy` chain/proof/scan 운영 흐름을 직접 익히게 하지만 목표 Maroo 경로의 등가 구현은 아니다.
+
+## 8. 프로덕션 전 결정
+
+1. prover 위치, witness 노출, VK/artifact 배포·회전 owner.
+2. PCL sender/recipient policy와 attestation 발급·revoke SLA.
+3. employee↔shielded-address registry의 승인·회전·폐기와 payroll plan digest 결속.
+4. employee viewing key 복구, 퇴사, 재스캔 정책.
+5. audit key HSM/KMS, epoch 회전, 열람 승인과 보존 기간.
+6. tx confirmed와 employee delivery를 분리한 idempotency/reconciliation 상태기계.
+7. 실제 규모에서 proof time, memory, gas, block limit, deadline SLA.
