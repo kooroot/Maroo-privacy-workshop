@@ -1,17 +1,15 @@
 # Maroo Confidential Payroll Workshop
 
-Maroo Developer Relations 과제의 Primary Track B 제출물이다. 한국 금융기관의 시니어 백엔드·블록체인 엔지니어 20명이 각자 독립 환경과 계정으로 실행한다. 75분 정본 경로는 **Maroo Testnet**이다. 참가자는 공통 개발 환경과 Maroo readiness를 먼저 확정하고, Clairveil Local에서 실제 `x/privacy` 정상 급여·공개/직원 관찰·overspend 거부·성공한 오지급을 구현 참고로 수행한 뒤, Maroo에서 회사 signer의 deposit→transfer를 실제 시도하고 성공 또는 거부를 판정한다.
+Maroo Developer Relations 과제의 **Primary Track B** 제출물이다. 한국 금융기관의 시니어 백엔드·블록체인 엔지니어 20명이 각자 독립 환경과 계정으로 실행한다. 75분 정본 경로는 **Maroo Testnet**이다. 참가자는 공통 개발 환경과 Maroo readiness를 먼저 확정하고, Clairveil Local에서 실제 `x/privacy` 정상 급여·공개/직원 관찰·overspend 거부·성공한 오지급을 구현 참고로 수행한 뒤, Maroo에서 회사 signer의 deposit→transfer를 실제 시도하고 성공 또는 거부를 판정한다.
 
 핵심 원칙은 tx 성공과 지급 완료를 구분하는 것이다. `PrivacyDeposit` → `PrivacySingleProofBatchTransfer(outputCount=3)` → 직원별 scan 3건 → audit verify가 같은 plan digest로 이어져야 full live 성공이다.
 
 | 항목 | 제출 값 |
 |---|---|
 | Public repository | <https://github.com/kooroot/Maroo-privacy-workshop> |
-| 5~8분 walkthrough | 미입력 |
+| 5~8분 walkthrough | [YouTube — maroo privacy workshop video](https://youtu.be/iTRQt5_Vc-Y) · `unlisted` |
 | Live state-change evidence | [evidence/live-testnet/state-change-attempt.json](evidence/live-testnet/state-change-attempt.json) |
 | Live tx / outcome | [deposit included-revert](https://explorer-testnet.maroo.io/tx/0xaa36463028962fccb246897d45bf13e43f6ef3da3cb6522fe4d3bdc82bd2c939)<br>[transfer included-revert](https://explorer-testnet.maroo.io/tx/0x3d3d6bbba494127e776a7014acbdc3e087b680a0190b642baf21bbdc87efb622) |
-
-영상만 아직 미입력이다. 녹화·업로드 후 이 표와 [video-link.md](video-link.md)에 URL·길이·공개 범위·녹화 commit을 기록한다.
 
 ## 1. 5분 리뷰 경로
 
@@ -32,7 +30,7 @@ Maroo Developer Relations 과제의 Primary Track B 제출물이다. 한국 금�
 | `README.md` | 이 문서 | Primary Track, 대상, 리뷰 경로, 실행법, 영상·tx 링크, Clairveil SHA, 한계 명시 |
 | `SUBMISSION_NOTES.md` | [SUBMISSION_NOTES.md](SUBMISSION_NOTES.md) | Assumptions/Discrepancies, Validation, AI Usage, DX Feedback, Known Limitations 포함 |
 | Workshop slide deck | [Maroo_Privacy_Workshop_75min.pptx](deliverables/Maroo_Privacy_Workshop_75min.pptx) | Track B 참가자용 30장; 아키텍처·트랜잭션 흐름·신뢰 경계·실패 모드·프로덕션 판단 포함 |
-| Video | [video-link.md](video-link.md) | 5~8분 run sheet 완료; 실제 public/unlisted URL 입력 대기 |
+| Video | [YouTube](https://youtu.be/iTRQt5_Vc-Y), [video-link.md](video-link.md) | 일부공개로 업로드 완료 |
 
 ### 2.2 Track B 필수 결과물
 
@@ -44,9 +42,8 @@ Maroo Developer Relations 과제의 Primary Track B 제출물이다. 한국 금�
 | Workshop Slides | [30-slide PPTX](deliverables/Maroo_Privacy_Workshop_75min.pptx) | 참가자 발표용 16:9 덱; 모든 다이어그램과 표를 PowerPoint에서 편집 가능 |
 | Troubleshooting Guide | [troubleshooting](workshop/troubleshooting.md) | 15개 오류 + Clairveil/Maroo/recorded 대체 진행 |
 | Validation | [demo Validation](demo/README.md#10-validation), [SUBMISSION_NOTES](SUBMISSION_NOTES.md#2-validation), [Clairveil local evidence](evidence/local/payroll-summary.json) | actual Clairveil proof/scan·overspend·오지급 control + actual Maroo Path B receipt 검증 |
-| Walkthrough Video | [video-link.md](video-link.md) | 링크/길이는 녹화 후 기록 |
+| Walkthrough Video | [YouTube](https://youtu.be/iTRQt5_Vc-Y), [video-link.md](video-link.md) | 일부공개로 업로드 완료 |
 
-과제의 “Live Testnet Evidence”는 **지원자 제출물**이 상태 변경 tx를 최소 한 번 실제로 시도하라는 요구다. 참가자별 실행은 이 요구를 잘못 확장한 것이 아니라, 각자가 전체 흐름을 직접 완료하도록 한 워크숍 운영 설계다.
 
 ## 3. 대상과 시나리오
 
@@ -109,7 +106,7 @@ bun run demo/scripts/run.ts --target maroo-testnet --action preflight \
 
 상태 변경과 proof/scan 명령은 [참가자 가이드](workshop/participant-guide.md#3-구간별-실습)를 따른다. `--broadcast`를 명시하지 않은 submit은 estimate만 한다.
 
-이번 제출은 호환 Privacy bundle을 확보하지 못해 Path B를 실행했다. 회사 signer가 ABI-valid하지만 ZK 입력이 의도적으로 무효인 `IPrivacy.deposit`과 `IPrivacy.transfer`를 실제 전송했고, 두 transaction 모두 테스트넷에 포함된 뒤 revert됐다. 실행 명령과 receipt는 [Path B evidence](evidence/live-testnet/state-change-attempt.json)에 있으며, 재실행 방법은 [demo runbook](demo/README.md)에서 확인한다. 이 probe는 유효 proof 생성, private deposit 성공 또는 직원 지급 증거가 아니다.
+이번 제출은 Maroo 테스트넷의 Privacy bundle을 확보하지 못해 Path B를 실행했다. 회사 signer가 ABI-valid하지만 ZK 입력이 의도적으로 무효인 `IPrivacy.deposit`과 `IPrivacy.transfer`를 실제 전송했고, 두 transaction 모두 테스트넷에 포함된 뒤 revert됐다. 실행 명령과 receipt는 [Path B evidence](evidence/live-testnet/state-change-attempt.json)에 있으며, 재실행 방법은 [demo runbook](demo/README.md)에서 확인한다. 이 probe는 유효 proof 생성, private deposit 성공 또는 직원 지급 증거가 아니다.
 
 ### 4.4 Clairveil 구현 참고 실습
 

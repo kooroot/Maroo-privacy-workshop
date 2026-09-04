@@ -122,16 +122,20 @@ grep -RInE 'COMPANY_PRIVATE_KEY=|PRIVATE_KEY=|mnemonic|seed phrase|Authorization
 
 ## 3. AI Usage
 
-사용 도구: OpenAI Codex.
+사용 도구: OpenAI Codex, Claude Code, Google notebookLM
 
 | ID | 사용 | 검증·수정 |
 |---|---|---|
 | S1 | 과제 원문과 기존 자료에서 persona/75분/outcome/next-step 구조를 재편 | Track B 필수 결과물 목록과 모든 내부 링크를 자동 검사 |
 | S2 | plan/request/receipt/scan/audit 대사 코드와 negative controls 생성 | Bun test, offline full rehearsal, actual Clairveil local gate로 분리 검증 |
 | S3 | 기존 Local wrapper의 한 Bob 경계를 소스 전체에서 재탐색하고 distinct one-proof 실행기를 작성 | `transfer-batch-16x32` 구현·타입을 직접 대조하고 새 localnet에서 deposit/batch/직원별 scan을 실제 실행 |
+| S4 | Maroo 공식 문서와 과제 자료를 통합하고 슬라이드·퀴즈·보고서를 생성해 기반 개념을 빠르게 학습 | 주요 개념과 기술적 주장은 Maroo 공식 문서, 구현 코드와 실제 테스트넷 결과를 기준으로 다시 확인 |
+| S5 | 워크숍 커리큘럼과 데모의 초기 구조를 설계 | Track B 필수 결과물과 75분 학습 목표를 기준으로 구조를 재검토·보완 |
+| S6 | 75분 워크숍용 30장 PPT를 제작하고 아키텍처·트랜잭션 흐름·신뢰 경계·실패 모드·프로덕션 고려 사항을 시각화 | PowerPoint에서 도형과 표의 편집 가능 여부, 전체 레이아웃, 발표자 노트와 기반 문서의 일관성을 검증 |
 | E1 | 초기 최소 live 경로가 직원 지급과 무관한 일반 native self-transfer였고 signer 역할도 불명확했음 | 해당 경로를 제거하고 회사 signer가 Privacy precompile의 `deposit`·`transfer`를 실제 제출하도록 수정했다. 실패 거래는 유효 ZK 지급으로 주장하지 않는다. |
 | E2 | upstream reference script만 보고 Clairveil 로컬도 한 수취인만 지원한다고 판단했음 | 같은 commit의 `transfer-batch-16x32` 구현을 확인하고 EMP-A/B/C에 대한 one-proof 전송과 개별 scan을 실제 localnet에서 검증했다. |
 | E3 | PCL을 통과하면 직원 주소 착오도 자동으로 차단된다고 해석할 여지가 있었음 | PCL signer policy, Privacy proof 검증, 애플리케이션의 직원-address binding을 분리했다. EMP-C 오지급의 chain 성공·업무 실패와 사전 bundle 거부를 각각 실행해 경계를 확인했다. |
+| E4 | 초기 PPT에서 Prover를 기관이 직접 운영해야 하는 구성으로 단정하고 PCL·x/privacy의 실행 경계를 부정확하게 표현 | 사용자 검토로 오류를 발견하고, off-chain proof 생성과 on-chain x/privacy 검증을 분리했으며 PCL을 policy wrapper로, Prover 운영 방식을 self-host 또는 managed로 수정 |
 
 사람이 직접 판단한 부분:
 
@@ -156,7 +160,6 @@ grep -RInE 'COMPANY_PRIVATE_KEY=|PRIVATE_KEY=|mnemonic|seed phrase|Authorization
 
 - Maroo Privacy full flow의 유효 deposit→batch→scan/audit evidence. Path B의 실패 receipt와 explorer 검증은 완료했다.
 - WSL2 clean-run verification.
-- 5~8분 walkthrough video URL.
 
 ### Simulation or local-only
 
@@ -165,8 +168,8 @@ grep -RInE 'COMPANY_PRIVATE_KEY=|PRIVATE_KEY=|mnemonic|seed phrase|Authorization
 
 ### Before production
 
-- prover/VK provenance, witness trust boundary, artifact rotation.
-- sender/recipient policy와 attestation lifecycle, employee↔shielded-address registry와 plan/output binding.
-- employee viewing key와 auditor key custody/recovery/rotation.
-- idempotent submit, scanner cursor, reconciliation, partial delivery procedures.
-- performance/gas/block limit, monitoring, incident response, data retention.
+- 증명 생성기와 검증 키의 출처 관리, 증명 입력 데이터의 신뢰 경계, 증명 관련 산출물의 교체 절차
+- 송·수신자 정책, 증명서 발급·갱신·폐기 주기, 직원과 비공개 주소 연결, 급여 계획과 출력값 결속
+- 직원 열람 키와 감사 키의 보관·복구·교체 정책
+- 중복 제출 방지, 스캐너 처리 위치 관리, 거래·지급 결과 대사, 일부 지급 실패 대응 절차
+- 성능·가스·블록 한도, 모니터링, 사고 대응, 데이터 보존 정책

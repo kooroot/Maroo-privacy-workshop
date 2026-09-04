@@ -2,11 +2,13 @@
 
 | 항목 | 값 |
 |---|---|
-| URL | 녹화 후 입력 |
-| 길이 | 녹화 후 입력 |
+| URL | https://youtu.be/iTRQt5_Vc-Y |
+| 길이 | 492초 (8분 12초) |
 | 언어 | 한국어 |
-| 공개 설정 | public 또는 unlisted |
-| 녹화 commit | 녹화 후 입력 |
+| 공개 설정 | unlisted |
+| 녹화 commit | eab5a4120cdde4e5809853554ceaa514da9fe42a |
+
+> 2차 초안 확인 결과: 영상은 정상 재생되고 링크 접근도 가능하지만, 과제 상한 480초를 12초 초과한다. 최종 제출 전 12초 이상 편집한 뒤 YouTube 영상을 교체하고 실제 길이로 이 표를 갱신한다.
 
 실행하지 않은 기능을 동작하는 것처럼 연출하지 않는다. Maroo Testnet을 중심에 두고, 실제 Maroo Path B 두 건은 `[Live Testnet]` 포함 후 revert, 참가자가 직접 수행하는 Clairveil `x/privacy`는 구현 참고용 `[Local]`로 표시한다. 유효 Maroo proof·직원 지급·감사 검증이 빠졌다는 경계를 화면에 고정한다.
 
@@ -33,9 +35,9 @@
 - Clairveil local 정상 급여·두 control, Maroo 포함 후 revert, Maroo scanner 미검증을 별도 장면으로 보여 주고 full Maroo delivery로 합치지 않는다.
 - 실패 화면에는 UTC, 환경, 원문 오류, 재현 명령이 보인다.
 
-## 링크 반영과 검증
+## 제출 전 링크 검증
 
-촬영 전 현재 코드와 evidence를 commit하고 그 SHA를 기록한다. 업로드 후 이 문서의 표를 실제 URL·길이(초)·`public` 또는 `unlisted`·녹화 commit으로 교체하고, [README 제출 표](README.md)의 영상 항목에도 같은 URL을 넣는다.
+현재 URL·공개 범위·녹화 기준 commit은 반영됐다. 영상을 300~480초로 편집한 뒤 길이 값을 바꾸고 다음 검사를 실행한다.
 
 ```bash
 bun run demo/scripts/check-submission.ts --final

@@ -1,6 +1,6 @@
 {
   "label": "[Live Testnet]",
-  "utc": "2026-09-04T01:07:04.993Z",
+  "utc": "2026-09-04T06:46:23.404Z",
   "mode": "read-only-preflight",
   "chainId": 450815,
   "checks": {
@@ -82,6 +82,6 @@
   "stateChangingTransaction": false,
   "companyAccount": "0xa4A004C5A40A3Ad7a7e79AAA2a44dAD721c8c0dE",
   "employeeAccount": "0xE219Ce7b684B96303d3CbC092fEFa1841CfF0161",
-  "balanceWei": "10000000000000000000000",
+  "balanceWei": "9986168683000000000000",
   "requiredDepositWei": "300000000000000000000"
 }
